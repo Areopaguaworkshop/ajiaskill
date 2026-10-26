@@ -1,0 +1,74 @@
+{
+  "schema": 1,
+  "hosts": {
+    "opencode": {
+      "user_roots": [
+        "~/.config/opencode/skills",
+        "~/.agents/skills",
+        "~/.claude/skills"
+      ],
+      "project_roots": [
+        ".opencode/skills",
+        ".agents/skills",
+        ".claude/skills"
+      ],
+      "install_root": "~/.config/opencode/skills"
+    },
+    "pi": {
+      "user_roots": [
+        "~/.pi/agent/skills",
+        "~/.agents/skills"
+      ],
+      "project_roots": [
+        ".pi/skills",
+        ".agents/skills"
+      ],
+      "install_root": "~/.pi/agent/skills"
+    },
+    "hermes": {
+      "user_roots": [
+        "~/.hermes/skills",
+        "~/.agents/skills"
+      ],
+      "project_roots": [
+        ".hermes/skills",
+        ".agents/skills"
+      ],
+      "install_root": "~/.hermes/skills"
+    },
+    "codex": {
+      "user_roots": [
+        "~/.agents/skills",
+        "~/.codex/skills"
+      ],
+      "project_roots": [
+        ".agents/skills",
+        ".codex/skills"
+      ],
+      "install_root": "~/.agents/skills"
+    },
+    "omp": {
+      "user_roots": [
+        "~/.omp/agent/skills",
+        "~/.agents/skills"
+      ],
+      "project_roots": [
+        ".omp/skills",
+        ".agent/skills",
+        ".agents/skills"
+      ],
+      "install_root": "~/.omp/agent/skills"
+    },
+    "claude": {
+      "user_roots": [
+        "~/.claude/skills",
+        "~/.agents/skills"
+      ],
+      "project_roots": [
+        ".claude/skills",
+        ".agents/skills"
+      ],
+      "install_root": "~/.claude/skills"
+    }
+  }
+}

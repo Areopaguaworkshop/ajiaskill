@@ -1,0 +1,263 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "ajiaskill — Task to promoted skill",
+    "quality_profile": "showcase",
+    "output": "docs/diagrams/ajiaskill-workflow.html",
+    "views": [
+      {
+        "id": "discover",
+        "label": "Discover",
+        "focus": [
+          "task",
+          "native",
+          "catalog",
+          "search",
+          "use"
+        ],
+        "note": "Native first, then the local catalog."
+      },
+      {
+        "id": "prove",
+        "label": "Use and prove",
+        "focus": [
+          "use",
+          "work",
+          "scan",
+          "gate",
+          "promote"
+        ],
+        "note": "Use in place, then scan and approve before promotion."
+      },
+      {
+        "id": "sources",
+        "label": "Sources",
+        "focus": [
+          "catalog",
+          "search",
+          "native"
+        ],
+        "note": "Foundry, Hermes, and remote sources share the catalog."
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "user",
+      "label": "User"
+    },
+    {
+      "id": "host",
+      "label": "Agent Host"
+    },
+    {
+      "id": "mcp",
+      "label": "ajiaskill MCP + Catalog"
+    },
+    {
+      "id": "safety",
+      "label": "Safety + Promotion"
+    }
+  ],
+  "phases": [
+    {
+      "id": "intake",
+      "label": "Intake",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "discover",
+      "label": "Discover + select",
+      "fromCol": 2,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "use",
+      "label": "Use + promote",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": [
+    "task",
+    "native",
+    "search",
+    "use",
+    "work",
+    "scan",
+    "gate",
+    "promote"
+  ],
+  "nodes": [
+    {
+      "id": "task",
+      "lane": "user",
+      "col": 0,
+      "type": "external",
+      "label": "User Task",
+      "sublabel": "natural language",
+      "width": 132
+    },
+    {
+      "id": "native",
+      "lane": "host",
+      "col": 1,
+      "type": "security",
+      "label": "Native Check",
+      "sublabel": "hosts.json · ownership",
+      "tag": "native first",
+      "width": 140
+    },
+    {
+      "id": "catalog",
+      "lane": "mcp",
+      "col": 1,
+      "type": "database",
+      "label": "Catalog",
+      "sublabel": "core · Hermes · foundry",
+      "tag": "one index",
+      "width": 150
+    },
+    {
+      "id": "search",
+      "lane": "mcp",
+      "col": 2,
+      "type": "backend",
+      "label": "ajia_search",
+      "sublabel": "5 candidates",
+      "tag": "read-only",
+      "width": 132
+    },
+    {
+      "id": "use",
+      "lane": "mcp",
+      "col": 3,
+      "type": "backend",
+      "label": "ajia_use",
+      "sublabel": "inline SKILL.md",
+      "tag": "no install",
+      "width": 132
+    },
+    {
+      "id": "work",
+      "lane": "host",
+      "col": 4,
+      "type": "backend",
+      "label": "Do the Work",
+      "sublabel": "follow the skill",
+      "width": 132
+    },
+    {
+      "id": "scan",
+      "lane": "safety",
+      "col": 4,
+      "type": "security",
+      "label": "Scan",
+      "sublabel": "security · PII · lint · license",
+      "tag": "evidence",
+      "width": 150
+    },
+    {
+      "id": "gate",
+      "lane": "safety",
+      "col": 5,
+      "type": "security",
+      "label": "Verdict",
+      "sublabel": "allow / warn / block",
+      "tag": "manual approval",
+      "width": 140
+    },
+    {
+      "id": "promote",
+      "lane": "host",
+      "col": 5,
+      "type": "backend",
+      "label": "Promote + Lock",
+      "sublabel": "copy · marker · backup",
+      "tag": "reversible",
+      "width": 150
+    }
+  ],
+  "edges": [
+    {
+      "id": "task-native",
+      "from": "task",
+      "to": "native",
+      "route": "drop",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "native-work",
+      "from": "native",
+      "to": "work",
+      "label": "use native",
+      "variant": "emphasis",
+      "role": "branch"
+    },
+    {
+      "id": "native-search",
+      "from": "native",
+      "to": "search",
+      "label": "no native",
+      "role": "main"
+    },
+    {
+      "id": "search-catalog",
+      "from": "search",
+      "to": "catalog",
+      "label": "query",
+      "variant": "dashed",
+      "role": "async"
+    },
+    {
+      "id": "search-use",
+      "from": "search",
+      "to": "use",
+      "label": "best match",
+      "role": "main"
+    },
+    {
+      "id": "use-work",
+      "from": "use",
+      "to": "work",
+      "label": "inline body",
+      "variant": "emphasis",
+      "role": "main"
+    },
+    {
+      "id": "work-scan",
+      "from": "work",
+      "to": "scan",
+      "label": "keep result",
+      "role": "main"
+    },
+    {
+      "id": "scan-gate",
+      "from": "scan",
+      "to": "gate",
+      "label": "verdict",
+      "role": "main"
+    },
+    {
+      "id": "gate-promote",
+      "from": "gate",
+      "to": "promote",
+      "label": "allow or force",
+      "variant": "emphasis",
+      "role": "main"
+    },
+    {
+      "id": "gate-work",
+      "from": "gate",
+      "to": "work",
+      "label": "block or revise",
+      "variant": "security",
+      "role": "error"
+    }
+  ]
+}

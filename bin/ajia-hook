@@ -1,0 +1,141 @@
+#!/usr/bin/env python3
+"""Generic per-turn hook for Codex, Claude Code, and Hermes.
+
+Reads the host hook payload on stdin, calls `ajia route`, and prints the
+selected skill body in the host's expected shape. Fails open: any error,
+timeout, low confidence, or control message produces no output.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+AJIA = Path(os.environ.get("AJIA_BIN", HERE / "ajia"))
+AJIA_HOME = Path(os.environ.get("AJIA_HOME", Path.home() / ".ajia"))
+STATE = AJIA_HOME / "turn-state.json"
+CLAUDE_LIMIT = 9000
+CONTROL_PREFIXES = ("stop", "wait", "pause", "hold on", "cancel", "never mind", "abort")
+
+
+def read_state() -> dict[str, str]:
+    try:
+        data = json.loads(STATE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def write_state(data: dict[str, str]) -> None:
+    try:
+        STATE.parent.mkdir(parents=True, exist_ok=True)
+        STATE.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
+def internal(message: str) -> bool:
+    text = message.strip()
+    return (
+        text.startswith("[")
+        or "background process" in text.lower()
+        or text.lower().startswith(CONTROL_PREFIXES)
+    )
+
+
+def main() -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--host", choices=["codex", "claude", "hermes"], required=True)
+    parser.add_argument("--max-chars", type=int, default=0)
+    args = parser.parse_args()
+
+    try:
+        payload = json.load(sys.stdin)
+    except (json.JSONDecodeError, OSError):
+        return 0
+
+    if args.host == "hermes":
+        extra = payload.get("extra") or {}
+        prompt = extra.get("user_message") or payload.get("prompt")
+        session_id = str(payload.get("session_id") or extra.get("session_id") or "hermes")
+        turn_id = extra.get("turn_id") or payload.get("turn_id")
+    else:
+        prompt = payload.get("prompt")
+        session_id = None
+        turn_id = None
+
+    if not isinstance(prompt, str) or not prompt.strip() or internal(prompt):
+        return 0
+
+    state = read_state() if args.host == "hermes" else {}
+    if args.host == "hermes" and turn_id and state.get(session_id) == str(turn_id):
+        return 0
+
+    try:
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(AJIA),
+                "route",
+                prompt,
+                "--json",
+                "--host",
+                args.host,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=2.0,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return 0
+    if result.returncode != 0 or not result.stdout.strip():
+        return 0
+    try:
+        routed = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return 0
+
+    if args.host == "hermes":
+        state[session_id] = str(turn_id) if turn_id else hashlib.sha256(prompt.encode()).hexdigest()
+        write_state(state)
+
+    if routed.get("decision") != "inject":
+        return 0
+    body = routed.get("body")
+    if not isinstance(body, str) or not body.strip():
+        return 0
+
+    limit = args.max_chars or (CLAUDE_LIMIT if args.host == "claude" else 0)
+    if limit and len(body) > limit:
+        skill_id = (routed.get("selected") or {}).get("id", "skill")
+        body = (
+            body[:limit]
+            + f"\n\n[ajia: truncated at {limit} chars. Run `ajia use {skill_id} --json` for the full skill.]"
+        )
+
+    if args.host == "hermes":
+        print(json.dumps({"context": body}, ensure_ascii=False))
+    else:
+        print(
+            json.dumps(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "UserPromptSubmit",
+                        "additionalContext": body,
+                    }
+                },
+                ensure_ascii=False,
+            )
+        )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

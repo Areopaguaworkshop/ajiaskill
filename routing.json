@@ -1,0 +1,766 @@
+{
+  "schema": 1,
+  "skills": {
+    "ajia-core/grill-me": {
+      "capabilities": [
+        "requirements.interview"
+      ],
+      "triggers": {
+        "phrases": [
+          "grill me",
+          "stress test this",
+          "what am i missing",
+          "help me decide"
+        ],
+        "keywords": [
+          "grill",
+          "vague",
+          "idea",
+          "requirements",
+          "scope",
+          "assumptions"
+        ],
+        "regex": []
+      },
+      "examples": {
+        "positive": [
+          "help me figure out what to build",
+          "stress-test this plan"
+        ],
+        "negative": [
+          "write my performance review",
+          "review my resume"
+        ]
+      },
+      "negative_triggers": [
+        {
+          "pattern": "resume|performance review|job interview",
+          "severity": "veto",
+          "unless": "requirements|scope|build|product"
+        }
+      ],
+      "file_globs": [],
+      "host_fit": [
+        "*"
+      ],
+      "requires": {
+        "tools": []
+      },
+      "priority": 70,
+      "routing": {
+        "enabled": true,
+        "max_injections": 1,
+        "always_apply": false
+      }
+    },
+    "ajia-core/write-plan": {
+      "capabilities": [
+        "plan.write"
+      ],
+      "triggers": {
+        "phrases": [
+          "write a plan",
+          "implementation plan",
+          "break this down",
+          "plan this"
+        ],
+        "keywords": [
+          "plan",
+          "implement",
+          "steps",
+          "tasks",
+          "breakdown"
+        ],
+        "regex": []
+      },
+      "examples": {
+        "positive": [
+          "turn this spec into an implementation plan",
+          "break this feature into tasks"
+        ],
+        "negative": [
+          "plan a trip",
+          "write a business plan"
+        ]
+      },
+      "negative_triggers": [
+        {
+          "pattern": "business plan|plan a trip|travel plan",
+          "severity": "veto",
+          "unless": "code|feature|refactor|implementation"
+        }
+      ],
+      "file_globs": [],
+      "host_fit": [
+        "*"
+      ],
+      "requires": {
+        "tools": []
+      },
+      "priority": 75,
+      "routing": {
+        "enabled": true,
+        "max_injections": 1,
+        "always_apply": false
+      }
+    },
+    "ajia-core/ajia-find": {
+      "capabilities": [
+        "skill.discover"
+      ],
+      "triggers": {
+        "phrases": [
+          "find a skill",
+          "search skills",
+          "skill for this",
+          "is there a skill"
+        ],
+        "keywords": [
+          "skill",
+          "find",
+          "catalog",
+          "search"
+        ],
+        "regex": []
+      },
+      "examples": {
+        "positive": [
+          "find a skill for accessibility review",
+          "which skill fits this task"
+        ],
+        "negative": []
+      },
+      "negative_triggers": [],
+      "file_globs": [],
+      "host_fit": [
+        "*"
+      ],
+      "requires": {
+        "tools": []
+      },
+      "priority": 40,
+      "routing": {
+        "enabled": true,
+        "max_injections": 1,
+        "always_apply": false
+      }
+    },
+    "ajia-core/ajia-scan": {
+      "capabilities": [
+        "skill.scan"
+      ],
+      "triggers": {
+        "phrases": [
+          "scan this skill",
+          "is this skill safe",
+          "security scan",
+          "check this skill"
+        ],
+        "keywords": [
+          "scan",
+          "safe",
+          "security",
+          "vulnerability",
+          "license"
+        ],
+        "regex": []
+      },
+      "examples": {
+        "positive": [
+          "scan this skill before I install it",
+          "is this skill safe to run"
+        ],
+        "negative": [
+          "scan this document",
+          "ocr this pdf"
+        ]
+      },
+      "negative_triggers": [
+        {
+          "pattern": "scan this document|ocr this pdf|scan the page",
+          "severity": "veto",
+          "unless": "skill|security|vulnerability"
+        }
+      ],
+      "file_globs": [],
+      "host_fit": [
+        "*"
+      ],
+      "requires": {
+        "tools": []
+      },
+      "priority": 75,
+      "routing": {
+        "enabled": true,
+        "max_injections": 1,
+        "always_apply": false
+      }
+    },
+    "ajia-core/ajia-promote": {
+      "capabilities": [
+        "skill.promote"
+      ],
+      "triggers": {
+        "phrases": [
+          "promote this skill",
+          "install this skill",
+          "add to core",
+          "make it core"
+        ],
+        "keywords": [
+          "promote",
+          "install",
+          "core"
+        ],
+        "regex": []
+      },
+      "examples": {
+        "positive": [
+          "promote this skill into my core set",
+          "install this skill after the scan"
+        ],
+        "negative": [
+          "npm install",
+          "pip install",
+          "brew install"
+        ]
+      },
+      "negative_triggers": [
+        {
+          "pattern": "npm install|pip install|brew install|cargo install",
+          "severity": "veto",
+          "unless": "skill|core|promote"
+        }
+      ],
+      "file_globs": [],
+      "host_fit": [
+        "*"
+      ],
+      "requires": {
+        "tools": []
+      },
+      "priority": 70,
+      "routing": {
+        "enabled": true,
+        "max_injections": 1,
+        "always_apply": false
+      }
+    },
+    "ajia-core/ajia-sandbox": {
+      "capabilities": [
+        "skill.sandbox"
+      ],
+      "triggers": {
+        "phrases": [
+          "sandbox this",
+          "run this skill script",
+          "untrusted script"
+        ],
+        "keywords": [
+          "sandbox",
+          "docker",
+          "script"
+        ],
+        "regex": []
+      },
+      "examples": {
+        "positive": [
+          "run this skill script in a sandbox",
+          "sandbox this untrusted script"
+        ],
+        "negative": []
+      },
+      "negative_triggers": [],
+      "file_globs": [],
+      "host_fit": [
+        "*"
+      ],
+      "requires": {
+        "tools": []
+      },
+      "priority": 65,
+      "routing": {
+        "enabled": true,
+        "max_injections": 1,
+        "always_apply": false
+      }
+    },
+    "ajia-core/ajia-learn": {
+      "capabilities": [
+        "skill.learn"
+      ],
+      "triggers": {
+        "phrases": [
+          "learn this workflow",
+          "capture this skill",
+          "save this as a skill"
+        ],
+        "keywords": [
+          "learn",
+          "capture",
+          "workflow",
+          "skill"
+        ],
+        "regex": []
+      },
+      "examples": {
+        "positive": [
+          "capture this workflow as a skill",
+          "save this process for later"
+        ],
+        "negative": [
+          "learn a language",
+          "take this course"
+        ]
+      },
+      "negative_triggers": [
+        {
+          "pattern": "learn a language|take this course|study for",
+          "severity": "veto",
+          "unless": "skill|workflow|capture"
+        }
+      ],
+      "file_globs": [],
+      "host_fit": [
+        "*"
+      ],
+      "requires": {
+        "tools": []
+      },
+      "priority": 60,
+      "routing": {
+        "enabled": true,
+        "max_injections": 1,
+        "always_apply": false
+      }
+    },
+    "ajia-core/ajia-router": {
+      "capabilities": [
+        "skill.route"
+      ],
+      "triggers": {
+        "phrases": [
+          "which skill should i use",
+          "route this",
+          "what skill fits",
+          "how do you choose a skill"
+        ],
+        "keywords": [
+          "route",
+          "router",
+          "skill"
+        ],
+        "regex": []
+      },
+      "examples": {
+        "positive": [
+          "which skill should I use for this",
+          "route this task to the right skill"
+        ],
+        "negative": []
+      },
+      "negative_triggers": [],
+      "file_globs": [],
+      "host_fit": [
+        "*"
+      ],
+      "requires": {
+        "tools": []
+      },
+      "priority": 80,
+      "routing": {
+        "enabled": true,
+        "max_injections": 1,
+        "always_apply": false
+      }
+    },
+    "github-code-review": {
+      "capabilities": [
+        "review.code"
+      ],
+      "triggers": {
+        "phrases": [
+          "review this pr",
+          "code review",
+          "check this diff",
+          "review the pull request"
+        ],
+        "keywords": [
+          "review",
+          "pr",
+          "diff",
+          "merge",
+          "regression"
+        ],
+        "regex": [
+          "\\bPR\\b"
+        ]
+      },
+      "examples": {
+        "positive": [
+          "review this PR for security issues",
+          "check this diff before merge"
+        ],
+        "negative": [
+          "review my resume",
+          "write my performance review"
+        ]
+      },
+      "negative_triggers": [
+        {
+          "pattern": "resume|performance review|literature review",
+          "severity": "veto",
+          "unless": "code|pr|diff|merge"
+        }
+      ],
+      "file_globs": [
+        "**/*.ts",
+        "**/*.tsx",
+        "**/*.py",
+        "**/*.go",
+        "**/*.rs"
+      ],
+      "host_fit": [
+        "*"
+      ],
+      "requires": {
+        "tools": []
+      },
+      "priority": 85,
+      "routing": {
+        "enabled": true,
+        "max_injections": 1,
+        "always_apply": false
+      }
+    },
+    "github-pr-workflow": {
+      "capabilities": [
+        "git.pr"
+      ],
+      "triggers": {
+        "phrases": [
+          "open a pr",
+          "create a pull request",
+          "merge this branch",
+          "ship this pr"
+        ],
+        "keywords": [
+          "pr",
+          "branch",
+          "merge",
+          "pull request"
+        ],
+        "regex": []
+      },
+      "examples": {
+        "positive": [
+          "open a PR for this branch",
+          "merge the pull request"
+        ],
+        "negative": []
+      },
+      "negative_triggers": [],
+      "file_globs": [],
+      "host_fit": [
+        "*"
+      ],
+      "requires": {
+        "tools": []
+      },
+      "priority": 65,
+      "routing": {
+        "enabled": true,
+        "max_injections": 1,
+        "always_apply": false
+      }
+    },
+    "impeccable": {
+      "capabilities": [
+        "design.ui"
+      ],
+      "triggers": {
+        "phrases": [
+          "make this page prettier",
+          "design a page",
+          "improve the ui",
+          "redesign this",
+          "landing page",
+          "website design"
+        ],
+        "keywords": [
+          "design",
+          "ui",
+          "page",
+          "website",
+          "css",
+          "layout",
+          "typography",
+          "frontend"
+        ],
+        "regex": []
+      },
+      "examples": {
+        "positive": [
+          "make this page prettier",
+          "redesign the landing page",
+          "review the UI hierarchy"
+        ],
+        "negative": [
+          "design a database schema",
+          "system design"
+        ]
+      },
+      "negative_triggers": [
+        {
+          "pattern": "database schema|sql schema|schema design|system design",
+          "severity": "veto",
+          "unless": "ui|css|page|frontend|landing"
+        }
+      ],
+      "file_globs": [
+        "**/*.tsx",
+        "**/*.jsx",
+        "**/*.css",
+        "**/*.html"
+      ],
+      "host_fit": [
+        "*"
+      ],
+      "requires": {
+        "tools": []
+      },
+      "priority": 85,
+      "routing": {
+        "enabled": true,
+        "max_injections": 1,
+        "always_apply": false
+      }
+    },
+    "archify": {
+      "capabilities": [
+        "diagram.architecture"
+      ],
+      "triggers": {
+        "phrases": [
+          "draw the architecture",
+          "architecture diagram",
+          "workflow diagram",
+          "sequence diagram",
+          "draw a diagram"
+        ],
+        "keywords": [
+          "diagram",
+          "architecture",
+          "workflow",
+          "sequence",
+          "visualize"
+        ],
+        "regex": []
+      },
+      "examples": {
+        "positive": [
+          "draw the architecture of this repo",
+          "make a sequence diagram for this flow"
+        ],
+        "negative": [
+          "draw a conclusion",
+          "draw a comparison"
+        ]
+      },
+      "negative_triggers": [
+        {
+          "pattern": "draw a conclusion|draw a comparison",
+          "severity": "veto"
+        }
+      ],
+      "file_globs": [],
+      "host_fit": [
+        "*"
+      ],
+      "requires": {
+        "tools": []
+      },
+      "priority": 85,
+      "routing": {
+        "enabled": true,
+        "max_injections": 1,
+        "always_apply": false
+      }
+    },
+    "browser-skill": {
+      "capabilities": [
+        "browser.use"
+      ],
+      "triggers": {
+        "phrases": [
+          "open my browser",
+          "check the page in the browser",
+          "navigate to",
+          "fill this form",
+          "logged-in browser"
+        ],
+        "keywords": [
+          "browser",
+          "page",
+          "click",
+          "form",
+          "login",
+          "navigate"
+        ],
+        "regex": []
+      },
+      "examples": {
+        "positive": [
+          "open my browser and check the page",
+          "fill this form with my logged-in browser"
+        ],
+        "negative": [
+          "open a file",
+          "browse the filesystem"
+        ]
+      },
+      "negative_triggers": [
+        {
+          "pattern": "open (a |the )?file|browse the filesystem",
+          "severity": "veto",
+          "unless": "browser|webpage|url"
+        }
+      ],
+      "file_globs": [],
+      "host_fit": [
+        "*"
+      ],
+      "requires": {
+        "tools": []
+      },
+      "priority": 85,
+      "routing": {
+        "enabled": true,
+        "max_injections": 1,
+        "always_apply": false
+      }
+    },
+    "logged-in-browser-automation": {
+      "capabilities": [
+        "browser.use"
+      ],
+      "triggers": {
+        "phrases": [
+          "use my logged-in browser",
+          "form needs my login",
+          "borrow my browser"
+        ],
+        "keywords": [
+          "browser",
+          "login",
+          "session",
+          "form"
+        ],
+        "regex": []
+      },
+      "examples": {
+        "positive": [
+          "use my logged-in browser to fill the form"
+        ],
+        "negative": []
+      },
+      "negative_triggers": [],
+      "file_globs": [],
+      "host_fit": [
+        "*"
+      ],
+      "requires": {
+        "tools": []
+      },
+      "priority": 75,
+      "routing": {
+        "enabled": true,
+        "max_injections": 1,
+        "always_apply": false
+      }
+    },
+    "software-development-workflow": {
+      "capabilities": [
+        "workflow.software",
+        "debug.root-cause"
+      ],
+      "triggers": {
+        "phrases": [
+          "fix this failing test",
+          "debug this",
+          "implement this feature",
+          "software workflow",
+          "fix this bug"
+        ],
+        "keywords": [
+          "debug",
+          "test",
+          "fix",
+          "implementation",
+          "bug",
+          "regression"
+        ],
+        "regex": []
+      },
+      "examples": {
+        "positive": [
+          "fix this failing test",
+          "debug this crash and prove the fix"
+        ],
+        "negative": [
+          "debug my feelings",
+          "fix my resume"
+        ]
+      },
+      "negative_triggers": [
+        {
+          "pattern": "debug my feelings|fix my resume|relationship",
+          "severity": "veto"
+        }
+      ],
+      "file_globs": [
+        "**/*.ts",
+        "**/*.py",
+        "**/*.go",
+        "**/*.rs"
+      ],
+      "host_fit": [
+        "*"
+      ],
+      "requires": {
+        "tools": []
+      },
+      "priority": 75,
+      "routing": {
+        "enabled": true,
+        "max_injections": 1,
+        "always_apply": false
+      }
+    }
+  },
+  "global_negative_triggers": [
+    {
+      "pattern": "resume|performance review|literature review|job application",
+      "severity": "veto",
+      "unless": "code|pr|diff|merge|repository"
+    },
+    {
+      "pattern": "debug my feelings|relationship|therapy",
+      "severity": "veto"
+    },
+    {
+      "pattern": "database schema|sql schema|schema design",
+      "severity": "veto",
+      "unless": "ui|css|page|frontend"
+    },
+    {
+      "pattern": "draw a conclusion|draw a comparison",
+      "severity": "veto"
+    },
+    {
+      "pattern": "open (a |the )?file",
+      "severity": "veto",
+      "unless": "browser|webpage|url"
+    }
+  ]
+}

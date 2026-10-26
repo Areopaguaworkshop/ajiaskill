@@ -1,0 +1,361 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "ajiaskill — Local MCP-first architecture",
+    "quality_profile": "showcase",
+    "output": "docs/diagrams/ajiaskill-architecture.html",
+    "views": [
+      {
+        "id": "default-path",
+        "label": "Default path",
+        "focus": [
+          "hosts",
+          "mcp",
+          "cli",
+          "catalog",
+          "native",
+          "safety"
+        ],
+        "note": "The host calls the local MCP server; the CLI resolves native, core, and source skills."
+      },
+      {
+        "id": "sources-and-foundry",
+        "label": "Sources and foundry",
+        "focus": [
+          "sources",
+          "foundry",
+          "hermes",
+          "skills_sh",
+          "catalog"
+        ],
+        "note": "Local sources, foundry candidates, Hermes-generated skills, and remote search feed one catalog."
+      },
+      {
+        "id": "promotion",
+        "label": "Promotion",
+        "focus": [
+          "safety",
+          "promote",
+          "hostroots",
+          "catalog"
+        ],
+        "note": "A scan and a manual gate move one exact skill into host roots."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "hosts",
+      "type": "external",
+      "label": "Agent Hosts",
+      "sublabel": "6 agent hosts",
+      "pos": [
+        40,
+        100
+      ],
+      "size": [
+        180,
+        64
+      ]
+    },
+    {
+      "id": "mcp",
+      "type": "backend",
+      "label": "ajiaskill MCP",
+      "sublabel": "stdio · search + use",
+      "tag": "read-only",
+      "pos": [
+        280,
+        100
+      ],
+      "size": [
+        180,
+        64
+      ]
+    },
+    {
+      "id": "cli",
+      "type": "backend",
+      "label": "ajia CLI",
+      "sublabel": "catalog · route · scan",
+      "tag": "source of truth",
+      "pos": [
+        520,
+        100
+      ],
+      "size": [
+        200,
+        64
+      ]
+    },
+    {
+      "id": "hostroots",
+      "type": "cloud",
+      "label": "Host Skill Roots",
+      "sublabel": ".agents · .claude · .pi",
+      "tag": "promotion target",
+      "pos": [
+        960,
+        100
+      ],
+      "size": [
+        180,
+        64
+      ]
+    },
+    {
+      "id": "sources",
+      "type": "cloud",
+      "label": "Skill Sources",
+      "sublabel": "core · Hermes · foundry · git",
+      "pos": [
+        40,
+        260
+      ],
+      "size": [
+        180,
+        70
+      ]
+    },
+    {
+      "id": "catalog",
+      "type": "database",
+      "label": "Catalog + Store",
+      "sublabel": "index · store · trials",
+      "pos": [
+        280,
+        260
+      ],
+      "size": [
+        180,
+        70
+      ]
+    },
+    {
+      "id": "native",
+      "type": "security",
+      "label": "Native Inventory",
+      "sublabel": "hosts.json · ownership",
+      "tag": "native-first",
+      "pos": [
+        520,
+        260
+      ],
+      "size": [
+        180,
+        70
+      ]
+    },
+    {
+      "id": "safety",
+      "type": "security",
+      "label": "Safety Gate",
+      "sublabel": "security · PII · lint · license",
+      "pos": [
+        760,
+        260
+      ],
+      "size": [
+        180,
+        70
+      ]
+    },
+    {
+      "id": "foundry",
+      "type": "backend",
+      "label": "Foundry",
+      "sublabel": "~/.ajia/foundry",
+      "tag": "candidates",
+      "pos": [
+        40,
+        430
+      ],
+      "size": [
+        180,
+        70
+      ]
+    },
+    {
+      "id": "hermes",
+      "type": "external",
+      "label": "Hermes",
+      "sublabel": "/learn · curator",
+      "tag": "interactive producer",
+      "pos": [
+        280,
+        430
+      ],
+      "size": [
+        180,
+        70
+      ]
+    },
+    {
+      "id": "skills_sh",
+      "type": "external",
+      "label": "skills.sh",
+      "sublabel": "remote search",
+      "tag": "optional",
+      "pos": [
+        520,
+        430
+      ],
+      "size": [
+        180,
+        70
+      ]
+    },
+    {
+      "id": "promote",
+      "type": "backend",
+      "label": "Promotion",
+      "sublabel": "scan → approve → lock",
+      "tag": "manual",
+      "pos": [
+        960,
+        430
+      ],
+      "size": [
+        180,
+        70
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "security-group",
+      "label": "Local machine · ~/.ajia",
+      "wraps": [
+        "mcp",
+        "cli",
+        "hostroots",
+        "catalog",
+        "sources",
+        "native",
+        "safety",
+        "foundry",
+        "hermes",
+        "promote"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "hosts-to-mcp",
+      "from": "hosts",
+      "to": "mcp",
+      "label": "tools"
+    },
+    {
+      "id": "mcp-to-cli",
+      "from": "mcp",
+      "to": "cli",
+      "label": "use"
+    },
+    {
+      "id": "cli-to-native",
+      "from": "cli",
+      "to": "native",
+      "label": "roots",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "cli-to-safety",
+      "from": "cli",
+      "to": "safety",
+      "label": "scan"
+    },
+    {
+      "id": "safety-to-promote",
+      "from": "safety",
+      "to": "promote",
+      "label": "verdict"
+    },
+    {
+      "id": "promote-to-hostroots",
+      "from": "promote",
+      "to": "hostroots",
+      "label": "copy + lock",
+      "variant": "emphasis"
+    },
+    {
+      "id": "sources-to-catalog",
+      "from": "sources",
+      "to": "catalog",
+      "label": "sync"
+    },
+    {
+      "id": "foundry-to-catalog",
+      "from": "foundry",
+      "to": "catalog",
+      "label": "candidate",
+      "variant": "dashed"
+    },
+    {
+      "id": "hermes-to-catalog",
+      "from": "hermes",
+      "to": "catalog",
+      "label": "generated",
+      "variant": "dashed"
+    },
+    {
+      "id": "skills-sh-to-sources",
+      "from": "skills_sh",
+      "to": "sources",
+      "label": "add",
+      "variant": "dashed",
+      "fromSide": "left",
+      "toSide": "top",
+      "via": [
+        [
+          500,
+          465
+        ],
+        [
+          500,
+          230
+        ],
+        [
+          130,
+          230
+        ],
+        [
+          130,
+          260
+        ]
+      ],
+      "labelAt": [
+        360,
+        220
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Default path",
+      "items": [
+        "MCP is a local stdio server; no daemon and no host hook.",
+        "External MCP servers can be pinned providers; ajiaskill does not vendor them."
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Native and foundry",
+      "items": [
+        "Native skills win before core and source skills.",
+        "Foundry candidates and Hermes learned skills land in one catalog."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Promotion gate",
+      "items": [
+        "Scan security, PII, lint, and license before promotion.",
+        "Promotion is manual, locked, and reversible."
+      ]
+    }
+  ]
+}

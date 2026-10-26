@@ -1,0 +1,2733 @@
+#!/usr/bin/env python3
+"""ajia — local skill platform.
+
+Catalog skill sources, search them, use a skill without installing it, and
+expose search/use over MCP. Standard library only.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import math
+import os
+import re
+import shlex
+import shutil
+import subprocess
+import sys
+from collections import Counter
+from urllib.parse import urlencode, urlparse
+from urllib.request import Request, urlopen
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any
+
+VERSION = "0.1.0"
+REPO_ROOT = Path(__file__).resolve().parent.parent
+POLICY = (
+    "When no installed or native skill clearly matches the task, call `ajia_search` once "
+    "before improvising. If a result fits, call `ajia_use` and follow the returned `SKILL.md` "
+    "in place; do not copy, install, or promote anything unless the user explicitly asks."
+)
+SKIP_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv", ".archive", ".hub"}
+SKIP_FILES = {".DS_Store"}
+STORE_SCHEMA = 1
+NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+SCAN_SUFFIXES = {
+    ".md", ".txt", ".py", ".sh", ".bash", ".zsh", ".js", ".mjs", ".ts",
+    ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".env",
+}
+SCRIPT_SUFFIXES = {".sh", ".bash", ".zsh", ".py", ".js", ".mjs", ".ts"}
+SCAN_RULES = [
+    ("critical", "remote-exec", re.compile(r"\b(curl|wget)\b[^\n|]{0,200}\|\s*(bash|sh|zsh)\b", re.I)),
+    ("high", "prompt-injection", re.compile(r"\b(ignore (all )?previous|disregard (all )?previous|do not tell the user|developer mode|system prompt)\b", re.I)),
+    ("high", "credential-access", re.compile(r"(~/\.ssh|\.aws/credentials|id_rsa|keychain|browser cookies|gh auth token|GITHUB_TOKEN)", re.I)),
+    ("high", "remote-instructions", re.compile(r"(fetch|download|read).{0,60}https?://.{0,60}(instruction|prompt|script)", re.I)),
+    ("medium", "dynamic-exec", re.compile(r"\b(eval|exec|subprocess|os\.system)\s*\(", re.I)),
+    ("low", "network", re.compile(r"https?://|169\.254\.169\.254|webhook", re.I)),
+    ("high", "secret", re.compile(r"(AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{36}|-----BEGIN [A-Z ]*PRIVATE KEY-----)")),
+]
+
+
+class SkillError(RuntimeError):
+    pass
+
+
+def safe_http_url(url: str) -> str:
+    """Allow https anywhere and http only on loopback (for local tests)."""
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise SkillError("only http(s) URLs are supported")
+    if parsed.username or parsed.password:
+        raise SkillError("URL credentials are not allowed")
+    if parsed.scheme == "http" and parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
+        raise SkillError("http is only allowed on loopback")
+    return url
+
+
+def safe_id(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9._-]+", "__", value)
+
+
+def now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def home_path(value: str | None) -> Path:
+    if value:
+        return Path(value).expanduser().resolve()
+    env = os.environ.get("AJIA_HOME")
+    if env:
+        return Path(env).expanduser().resolve()
+    return (Path.home() / ".ajia").resolve()
+
+
+def paths(home: Path) -> dict[str, Path]:
+    return {
+        "home": home,
+        "sources": home / "sources.yaml",
+        "catalog": home / "catalog",
+        "manifest": home / "catalog" / "manifest.json",
+        "skills": home / "catalog" / "skills.jsonl",
+        "store": home / "store",
+        "trials": home / "trials",
+        "scans": home / "scans",
+        "foundry": home / "foundry",
+        "source_cache": home / "sources",
+        "lock": home / "ajia.lock.json",
+    }
+
+
+def ensure_dirs(home: Path) -> None:
+    p = paths(home)
+    for key in ("catalog", "store", "trials", "scans", "foundry", "source_cache"):
+        p[key].mkdir(parents=True, exist_ok=True)
+
+
+def default_sources() -> list[dict[str, Any]]:
+    return [
+        {"id": "ajia-core", "type": "local", "path": "skills", "enabled": True},
+        {"id": "hermes", "type": "local", "path": "~/.hermes/skills", "enabled": True},
+        {"id": "agents", "type": "local", "path": "~/.agents/skills", "enabled": False},
+        {"id": "pstack", "type": "git", "url": "https://github.com/backnotprop/pstack.git", "ref": "main", "enabled": False},
+        {"id": "archify", "type": "git", "url": "https://github.com/tt-a1i/archify.git", "ref": "main", "enabled": False},
+        {"id": "answer-me", "type": "git", "url": "https://github.com/QingYunA/answer-me-with-html.git", "ref": "main", "enabled": False},
+        {"id": "impeccable", "type": "git", "url": "https://github.com/pbakaus/impeccable.git", "ref": "main", "enabled": False},
+        {"id": "openshell", "type": "git", "url": "https://github.com/NVIDIA/OpenShell.git", "ref": "main", "enabled": False},
+        {"id": "cua", "type": "git", "url": "https://github.com/trycua/cua.git", "ref": "main", "enabled": False},
+        {"id": "worktrunk", "type": "git", "url": "https://github.com/max-sixty/worktrunk.git", "ref": "main", "enabled": False},
+        {"id": "i-have-adhd", "type": "git", "url": "https://github.com/ayghri/i-have-adhd.git", "ref": "main", "enabled": False},
+        {"id": "browser-skill", "type": "git", "url": "https://github.com/Tencent/BrowserSkill.git", "ref": "main", "enabled": False},
+        {"id": "ponytail", "type": "git", "url": "https://github.com/DietrichGebert/ponytail.git", "ref": "main", "enabled": False},
+        {"id": "rtk", "type": "git", "url": "https://github.com/rtk-ai/rtk.git", "ref": "main", "enabled": False},
+        {"id": "karpathy", "type": "git", "url": "https://github.com/multica-ai/andrej-karpathy-skills.git", "ref": "main", "enabled": False},
+        {"id": "caveman", "type": "git", "url": "https://github.com/JuliusBrussee/caveman.git", "ref": "main", "enabled": False},
+        {"id": "taste", "type": "git", "url": "https://github.com/Leonxlnx/taste-skill.git", "ref": "main", "enabled": False},
+        {"id": "academic", "type": "git", "url": "https://github.com/Imbad0202/academic-research-skills.git", "ref": "main", "enabled": False},
+        {"id": "mattpocock", "type": "git", "url": "https://github.com/mattpocock/skills.git", "ref": "main", "enabled": False},
+        {"id": "notesmd", "type": "git", "url": "https://github.com/Yakitrak/notesmd-cli.git", "ref": "main", "enabled": False},
+        {"id": "system-prompts", "type": "git", "url": "https://github.com/x1xhlol/system-prompts-and-models-of-ai-tools.git", "ref": "main", "enabled": False},
+        {"id": "huggingface", "type": "git", "url": "https://github.com/huggingface/skills.git", "ref": "main", "enabled": False},
+        {"id": "superpowers", "type": "git", "url": "https://github.com/obra/superpowers.git", "ref": "main", "enabled": False},
+        {"id": "gsd", "type": "git", "url": "https://github.com/open-gsd/gsd-core.git", "ref": "main", "enabled": False},
+        {"id": "ecc", "type": "git", "url": "https://github.com/affaan-m/ECC.git", "ref": "main", "enabled": False},
+        {"id": "openai", "type": "git", "url": "https://github.com/openai/skills.git", "ref": "main", "enabled": False},
+        {"id": "anthropic", "type": "git", "url": "https://github.com/anthropics/skills.git", "ref": "main", "enabled": False},
+    ]
+
+
+def yaml_scalar(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return json.dumps(str(value))
+
+
+def dump_sources(sources: list[dict[str, Any]]) -> str:
+    lines = ["sources:"]
+    for source in sources:
+        first = True
+        for key in ("id", "type", "path", "url", "ref", "enabled", "generated", "license"):
+            if key not in source:
+                continue
+            prefix = "  - " if first else "    "
+            lines.append(f"{prefix}{key}: {yaml_scalar(source[key])}")
+            first = False
+    return "\n".join(lines) + "\n"
+
+
+def parse_sources(text: str) -> list[dict[str, Any]]:
+    sources: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].rstrip()
+        stripped = line.strip()
+        if not stripped or stripped == "sources:":
+            continue
+        if stripped.startswith("- "):
+            if current:
+                sources.append(current)
+            current = {}
+            stripped = stripped[2:].strip()
+        if current is None or ":" not in stripped:
+            continue
+        key, value = stripped.split(":", 1)
+        key = key.strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        if value.lower() in {"true", "false"}:
+            current[key] = value.lower() == "true"
+        else:
+            current[key] = value
+    if current:
+        sources.append(current)
+    return sources
+
+
+def load_sources(home: Path) -> list[dict[str, Any]]:
+    p = paths(home)
+    if not p["sources"].exists():
+        write_sources(home, default_sources())
+    sources = parse_sources(p["sources"].read_text(encoding="utf-8"))
+    if not any(source.get("id") == "foundry" for source in sources):
+        sources.append(
+            {
+                "id": "foundry",
+                "type": "local",
+                "path": str(paths(home)["foundry"]),
+                "enabled": True,
+            }
+        )
+        write_sources(home, sources)
+    return sources
+
+
+def write_sources(home: Path, sources: list[dict[str, Any]]) -> None:
+    p = paths(home)
+    p["sources"].parent.mkdir(parents=True, exist_ok=True)
+    p["sources"].write_text(dump_sources(sources), encoding="utf-8")
+
+
+def source_path(source: dict[str, Any], home: Path) -> Path | None:
+    kind = source.get("type", "local")
+    if kind == "local":
+        raw = str(source.get("path", ""))
+        if not raw:
+            return None
+        path = Path(raw).expanduser()
+        if not path.is_absolute():
+            path = REPO_ROOT / path
+        return path.resolve()
+    if kind == "git":
+        return (paths(home)["source_cache"] / str(source["id"])).resolve()
+    return None
+
+
+def parse_frontmatter(text: str) -> dict[str, str]:
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return {}
+    end = None
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            end = i
+            break
+    if end is None:
+        return {}
+    fields: dict[str, str] = {}
+    i = 1
+    while i < end:
+        line = lines[i]
+        if not line.strip() or line.lstrip().startswith("#"):
+            i += 1
+            continue
+        if ":" not in line or line.startswith((" ", "\t")):
+            i += 1
+            continue
+        key, value = line.split(":", 1)
+        key = key.strip()
+        value = value.strip()
+        if value in {">", "|"}:
+            block: list[str] = []
+            i += 1
+            while i < end and (lines[i].startswith((" ", "\t")) or not lines[i].strip()):
+                block.append(lines[i].strip())
+                i += 1
+            fields[key] = (" " if value == ">" else "\n").join(block).strip()
+            continue
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        fields[key] = value
+        i += 1
+    return fields
+
+
+def skill_hash(skill_dir: Path) -> tuple[str, int, list[str]]:
+    digest = hashlib.sha256()
+    files: list[str] = []
+    for root, dirs, names in os.walk(skill_dir):
+        dirs[:] = sorted(
+            d for d in dirs if d not in SKIP_DIRS and not d.startswith(".")
+        )
+        for name in sorted(names):
+            if name in SKIP_FILES or name.startswith("."):
+                continue
+            path = Path(root) / name
+            if path.is_symlink():
+                continue
+            try:
+                data = path.read_bytes()
+            except OSError:
+                continue
+            rel = path.relative_to(skill_dir).as_posix()
+            digest.update(rel.encode("utf-8"))
+            digest.update(b"\0")
+            digest.update(data)
+            digest.update(b"\0")
+            files.append(rel)
+    return digest.hexdigest(), len(files), files
+
+
+def iter_skill_dirs(source_root: Path) -> list[Path]:
+    result: list[Path] = []
+    if not source_root.is_dir():
+        return result
+    for skill_md in source_root.rglob("SKILL.md"):
+        if any(part in SKIP_DIRS for part in skill_md.parts):
+            continue
+        if skill_md.is_symlink():
+            continue
+        result.append(skill_md.parent)
+    return sorted(result)
+
+
+def git_commit(path: Path) -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(path), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return None
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def run_git(args: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", *args],
+        cwd=str(cwd) if cwd else None,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def sync_git_source(source: dict[str, Any], home: Path, refresh: bool = False) -> str:
+    dest = source_path(source, home)
+    assert dest is not None
+    url = str(source.get("url", ""))
+    ref = str(source.get("ref", "main") or "main")
+    if dest.exists():
+        if refresh:
+            result = run_git(["pull", "--ff-only"], cwd=dest)
+            if result.returncode != 0:
+                raise SkillError(result.stderr.strip() or "git pull failed")
+        return "ok"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    args = ["clone", "--depth", "1", "--branch", ref, url, str(dest)]
+    result = run_git(args)
+    if result.returncode != 0:
+        raise SkillError(result.stderr.strip() or f"git clone failed for {url}")
+    return "cloned"
+
+
+def write_json(path: Path, value: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+
+
+def read_json(path: Path, default: Any) -> Any:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return default
+
+
+
+def load_hosts(home: Path) -> dict[str, Any]:
+    merged: dict[str, Any] = {"schema": 1, "hosts": {}}
+    for path in (REPO_ROOT / "hosts.json", home / "hosts.json"):
+        if not path.exists():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        merged["hosts"].update(data.get("hosts", {}))
+    return merged
+
+
+
+def load_profiles(home: Path) -> dict[str, Any]:
+    merged: dict[str, Any] = {"schema": 1, "default": "personal", "profiles": {}}
+    for path in (REPO_ROOT / "profiles.json", home / "profiles.json"):
+        if not path.exists():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if data.get("default"):
+            merged["default"] = data["default"]
+        merged["profiles"].update(data.get("profiles", {}))
+    return merged
+
+
+def active_profile_name(home: Path) -> str:
+    env = os.environ.get("AJIA_PROFILE")
+    if env:
+        return env.strip()
+    path = home / "profile"
+    try:
+        value = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        value = ""
+    return value or load_profiles(home).get("default", "personal")
+
+
+def profile_config(home: Path, name: str | None = None) -> dict[str, Any]:
+    profiles = load_profiles(home)
+    key = name or active_profile_name(home)
+    return profiles.get("profiles", {}).get(key, {}) | {"name": key}
+
+
+def profile_allows_source(home: Path, source_id: str) -> bool:
+    sources = profile_config(home).get("sources", ["*"])
+    return "*" in sources or source_id in sources
+
+
+def profile_routing(home: Path) -> dict[str, Any]:
+    return profile_config(home).get("routing", {}) or {}
+
+
+def host_roots(host: str, cwd: str | None, home: Path) -> list[Path]:
+    config = load_hosts(home).get("hosts", {}).get(host, {})
+    roots: list[Path] = []
+    for raw in config.get("user_roots", []) or []:
+        roots.append(Path(str(raw)).expanduser().resolve())
+    base = Path(cwd).expanduser().resolve() if cwd else Path.cwd()
+    for raw in config.get("project_roots", []) or []:
+        roots.append((base / str(raw)).resolve())
+    return roots
+
+
+def is_owned_skill(path: Path, home: Path) -> bool:
+    try:
+        resolved = path.resolve()
+    except OSError:
+        return False
+    for base in (REPO_ROOT / "skills", home / "store", home / "backups"):
+        try:
+            base_resolved = base.resolve()
+            if resolved == base_resolved or resolved.is_relative_to(base_resolved):
+                return True
+        except OSError:
+            continue
+    return (path / ".ajia-promoted.json").exists()
+
+
+def native_inventory(
+    host: str, home: Path, cwd: str | None = None
+) -> dict[str, dict[str, Any]]:
+    inventory: dict[str, dict[str, Any]] = {}
+    for root in host_roots(host, cwd, home):
+        if not root.is_dir():
+            continue
+        skill_dirs: list[Path] = []
+        try:
+            for child in root.iterdir():
+                if child.is_dir() and (child / "SKILL.md").exists():
+                    skill_dirs.append(child)
+        except OSError:
+            pass
+        skill_dirs.extend(iter_skill_dirs(root))
+        seen_paths: set[str] = set()
+        for skill_dir in sorted(skill_dirs):
+            key = str(skill_dir.resolve()) if not skill_dir.is_symlink() else str(skill_dir)
+            if key in seen_paths:
+                continue
+            seen_paths.add(key)
+            try:
+                fields = parse_frontmatter((skill_dir / "SKILL.md").read_text(encoding="utf-8"))
+            except OSError:
+                continue
+            name = fields.get("name") or skill_dir.name
+            owned = is_owned_skill(skill_dir, home)
+            existing = inventory.get(name)
+            if existing is None or (existing["owned"] and not owned):
+                inventory[name] = {
+                    "name": name,
+                    "path": str(skill_dir),
+                    "host": host,
+                    "owned": owned,
+                }
+    return inventory
+
+
+def native_names(host: str, home: Path, cwd: str | None = None) -> set[str]:
+    return {
+        name
+        for name, record in native_inventory(host, home, cwd).items()
+        if not record["owned"]
+    }
+
+
+def native_hosts_for(name: str, home: Path, cwd: str | None = None) -> list[str]:
+    return [
+        host
+        for host in load_hosts(home).get("hosts", {})
+        if name in native_names(host, home, cwd)
+    ]
+
+
+def build_catalog(home: Path, quiet: bool = False) -> dict[str, Any]:
+    p = paths(home)
+    log = sys.stderr if quiet else sys.stdout
+    sources = load_sources(home)
+    records: list[dict[str, Any]] = []
+    source_report: list[dict[str, Any]] = []
+    errors: list[str] = []
+    seen_ids: dict[str, int] = {}
+
+    for source in sources:
+        source_id = str(source.get("id", ""))
+        enabled = bool(source.get("enabled", False))
+        kind = str(source.get("type", "local"))
+        root = source_path(source, home)
+        report: dict[str, Any] = {
+            "id": source_id,
+            "type": kind,
+            "enabled": enabled,
+            "target": str(source.get("path") or source.get("url") or ""),
+            "commit": None,
+            "skills": 0,
+            "license": source.get("license"),
+            "error": None,
+        }
+        if not enabled:
+            source_report.append(report)
+            continue
+        if root is None or not root.is_dir():
+            report["error"] = f"path not found: {root}"
+            errors.append(f"{source_id}: {report['error']}")
+            source_report.append(report)
+            continue
+        if kind == "git":
+            report["commit"] = git_commit(root)
+        usage: dict[str, Any] = {}
+        if source_id == "hermes":
+            try:
+                usage = json.loads((root / ".usage.json").read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                usage = {}
+
+        count = 0
+        for skill_dir in iter_skill_dirs(root):
+            skill_md = skill_dir / "SKILL.md"
+            try:
+                text = skill_md.read_text(encoding="utf-8")
+            except OSError as exc:
+                errors.append(f"{skill_dir}: {exc}")
+                continue
+            fields = parse_frontmatter(text)
+            name = fields.get("name") or skill_dir.name
+            description = fields.get("description", "").strip()
+            if not description:
+                errors.append(f"{skill_dir}: missing description; skipped")
+                continue
+            content_hash, file_count, files = skill_hash(skill_dir)
+            rel = skill_dir.relative_to(root)
+            rel_id = name if rel == Path(".") else rel.as_posix()
+            record_id = f"{source_id}/{rel_id}"
+            if record_id in seen_ids:
+                seen_ids[record_id] += 1
+                record_id = f"{record_id}#{seen_ids[record_id]}"
+            else:
+                seen_ids[record_id] = 1
+            category = ""
+            if source_id == "hermes" and len(rel.parts) > 1:
+                category = rel.parts[0]
+            usage_rec = usage.get(name, {}) if source_id == "hermes" else {}
+            created_by = usage_rec.get("created_by")
+            if source_id == "foundry":
+                generated = True
+                generated_by = "foundry"
+                curator_state = "candidate"
+            elif source_id == "hermes":
+                generated = created_by in {"agent", "learn"}
+                generated_by = created_by
+                curator_state = usage_rec.get("state")
+            else:
+                generated = bool(source.get("generated", False))
+                generated_by = source.get("generated_by")
+                curator_state = None
+            license_value = fields.get("license") or source.get("license") or "unknown"
+            license_source = (
+                "frontmatter"
+                if fields.get("license")
+                else ("source" if source.get("license") else "unknown")
+            )
+            records.append(
+                {
+                    "schema": 1,
+                    "id": record_id,
+                    "name": name,
+                    "description": description,
+                    "category": category,
+                    "source": {
+                        "id": source_id,
+                        "type": kind,
+                        "target": str(source.get("path") or source.get("url") or ""),
+                        "ref": source.get("ref"),
+                        "commit": report["commit"],
+                    },
+                    "source_path": str(skill_dir.resolve()),
+                    "content_hash": content_hash,
+                    "file_count": file_count,
+                    "files": files,
+                    "license": license_value,
+                    "license_source": license_source,
+                    "risk": "unknown",
+                    "generated": generated,
+                    "generated_by": generated_by,
+                    "curator_state": curator_state,
+                    "pinned": bool(usage_rec.get("pinned", False)),
+                    "use_count": int(usage_rec.get("use_count", 0) or 0),
+                    "created_at": usage_rec.get("created_at"),
+                }
+            )
+            count += 1
+        report["skills"] = count
+        source_report.append(report)
+
+    records.sort(key=lambda item: item["id"])
+    body = "".join(
+        json.dumps(record, ensure_ascii=False) + "\n" for record in records
+    )
+    p["catalog"].mkdir(parents=True, exist_ok=True)
+    p["skills"].write_text(body, encoding="utf-8")
+    manifest = {
+        "schema": 1,
+        "name": "ajia-local",
+        "version": VERSION,
+        "generated_at": now_iso(),
+        "skill_count": len(records),
+        "digest": hashlib.sha256(body.encode("utf-8")).hexdigest(),
+        "sources": source_report,
+        "errors": errors[:50],
+    }
+    write_json(p["manifest"], manifest)
+    print(
+        f"built {len(records)} skill(s) from "
+        f"{sum(1 for item in source_report if item['enabled'])} enabled source(s): {p['skills']}",
+        file=log,
+    )
+    for error in errors[:5]:
+        print(f"warn {error}", file=log)
+    if len(errors) > 5:
+        print(f"warn ... {len(errors) - 5} more", file=log)
+    return manifest
+
+
+def load_catalog(home: Path, quiet: bool = False) -> list[dict[str, Any]]:
+    p = paths(home)
+    if not p["skills"].exists():
+        build_catalog(home, quiet=quiet)
+    try:
+        lines = p["skills"].read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    records: list[dict[str, Any]] = []
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            records.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return records
+
+
+def search_catalog(
+    home: Path,
+    query: str,
+    limit: int = 5,
+    source: str | None = None,
+    quiet: bool = False,
+    host: str | None = None,
+    cwd: str | None = None,
+) -> list[dict[str, Any]]:
+    records = load_catalog(home, quiet=quiet)
+    q = query.strip().lower()
+    if not q:
+        return []
+    tokens = [t for t in re.split(r"[^a-z0-9\u4e00-\u9fff]+", q) if t]
+    scored: list[tuple[int, dict[str, Any], str]] = []
+    allowed_sources = set(profile_config(home).get("sources", ["*"]))
+    for record in records:
+        source_id = record.get("source", {}).get("id", "")
+        if source and source_id != source:
+            continue
+        if "*" not in allowed_sources and source_id not in allowed_sources:
+            continue
+        name = str(record.get("name", "")).lower()
+        description = str(record.get("description", "")).lower()
+        record_id = str(record.get("id", "")).lower()
+        score = 0
+        reasons: list[str] = []
+        if q == name:
+            score += 100
+            reasons.append("exact name")
+        elif q in name:
+            score += 50
+            reasons.append("name")
+        if q in description:
+            score += 30
+            reasons.append("description")
+        if q in record_id:
+            score += 15
+            reasons.append("id")
+        for token in tokens:
+            if token in name:
+                score += 8
+                reasons.append(f"name:{token}")
+            if token in description:
+                score += 4
+                reasons.append(f"desc:{token}")
+            if token in record_id:
+                score += 2
+        if score == 0:
+            continue
+        scored.append((score, record, ", ".join(dict.fromkeys(reasons)) or "match"))
+    scored.sort(key=lambda item: (-item[0], item[1].get("name", "")))
+    results: list[dict[str, Any]] = []
+    for score, record, reason in scored[: max(1, limit)]:
+        native_hosts = native_hosts_for(record["name"], home, cwd)
+        results.append(
+            {
+                "id": record["id"],
+                "name": record["name"],
+                "description": record["description"],
+                "source": record["source"],
+                "content_hash": record["content_hash"],
+                "license": record.get("license", "unknown"),
+                "license_source": record.get("license_source", "unknown"),
+                "risk": record.get("risk", "unknown"),
+                "generated": record.get("generated", False),
+                "generated_by": record.get("generated_by"),
+                "curator_state": record.get("curator_state"),
+                "use_count": record.get("use_count", 0),
+                "score": score,
+                "match_reason": reason,
+                "native_hosts": native_hosts,
+                "native": bool(host and host in native_hosts),
+            }
+        )
+    return results
+
+
+def resolve_skill(home: Path, value: str, quiet: bool = False) -> dict[str, Any]:
+    records = load_catalog(home, quiet=quiet)
+    for record in records:
+        if record["id"] == value:
+            return record
+    matches = [record for record in records if record["name"] == value]
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        ids = ", ".join(record["id"] for record in matches[:5])
+        raise SkillError(f"ambiguous skill name {value!r}; use an id: {ids}")
+    raise SkillError(f"skill not found: {value}")
+
+
+def safe_copy(src: Path, dest: Path) -> None:
+    if dest.exists():
+        if (dest / "SKILL.md").exists():
+            return
+        raise SkillError(f"store path exists but has no SKILL.md: {dest}")
+    dest.mkdir(parents=True, exist_ok=True)
+    for root, dirs, names in os.walk(src):
+        dirs[:] = sorted(
+            d for d in dirs if d not in SKIP_DIRS and not d.startswith(".")
+        )
+        rel = Path(root).relative_to(src)
+        out = dest / rel
+        out.mkdir(parents=True, exist_ok=True)
+        for name in sorted(names):
+            if name in SKIP_FILES or name.startswith("."):
+                continue
+            source_file = Path(root) / name
+            if source_file.is_symlink():
+                continue
+            shutil.copy2(source_file, out / name)
+
+
+def use_skill(
+    home: Path,
+    value: str,
+    agent: str | None = None,
+    quiet: bool = False,
+    host: str | None = None,
+) -> dict[str, Any]:
+    record = resolve_skill(home, value, quiet=quiet)
+    if host and record["name"] in native_names(host, home, os.getcwd()):
+        raise SkillError(
+            f"native skill available on {host}: {record['name']}; use the native skill instead"
+        )
+    source_dir = Path(record["source_path"])
+    if not source_dir.is_dir():
+        raise SkillError(f"source path is gone: {source_dir}")
+    p = paths(home)
+    dest = p["store"] / "sha256" / record["content_hash"] / "tree"
+    safe_copy(source_dir, dest)
+    trial_id = safe_id(record["id"])
+    trial = {
+        "schema": 1,
+        "id": record["id"],
+        "name": record["name"],
+        "content_hash": record["content_hash"],
+        "source": record["source"],
+        "resolved_at": now_iso(),
+        "used_at": now_iso(),
+        "expires_at": (
+            datetime.now(timezone.utc) + timedelta(days=30)
+        ).replace(microsecond=0).isoformat(),
+        "agent": agent or os.environ.get("AJIA_AGENT") or "unknown",
+        "installed": False,
+    }
+    write_json(p["trials"] / trial_id / "trial.json", trial)
+    body = (dest / "SKILL.md").read_text(encoding="utf-8")
+    return {
+        "id": record["id"],
+        "name": record["name"],
+        "description": record["description"],
+        "body": body,
+        "base_dir": str(dest),
+        "cache_path": str(dest / "SKILL.md"),
+        "files": record.get("files", []),
+        "content_hash": record["content_hash"],
+        "truncated": False,
+        "usage": "read-only",
+        "install": False,
+        "promote": False,
+        "note": (
+            "Use this skill in place. Do not copy it into .agents/skills, .claude/skills, "
+            "or any host skill directory; copying is installation. Promotion requires "
+            "`ajia promote` and explicit user approval."
+        ),
+    }
+
+
+
+STOPWORDS = {
+    "a", "an", "the", "this", "that", "to", "for", "of", "and", "or", "in",
+    "on", "with", "is", "are", "be", "it", "my", "me", "i", "you", "we",
+    "please", "can", "could", "would", "should", "do", "does", "how", "what",
+}
+TRIVIAL = {"ok", "okay", "thanks", "thank you", "got it", "yes", "no", "continue", "go on", "sure"}
+CONTROL_PREFIXES = ("stop", "wait", "pause", "hold on", "cancel", "never mind", "abort")
+
+
+def tokenize(text: str) -> list[str]:
+    return [
+        token
+        for token in re.findall(r"[a-z0-9\u4e00-\u9fff]+", text.lower())
+        if token not in STOPWORDS and len(token) > 1
+    ]
+
+
+def bm25(query_tokens: list[str], docs: list[list[str]]) -> list[float]:
+    if not docs or not query_tokens:
+        return [0.0] * len(docs)
+    n = len(docs)
+    avg = (sum(len(doc) for doc in docs) / n) or 1.0
+    df = Counter(term for doc in docs for term in set(doc))
+    scores: list[float] = []
+    for doc in docs:
+        tf = Counter(doc)
+        score = 0.0
+        for term in query_tokens:
+            if term not in tf:
+                continue
+            idf = math.log(1 + (n - df[term] + 0.5) / (df[term] + 0.5))
+            score += idf * (tf[term] * 2.5) / (
+                tf[term] + 1.5 * (1 - 0.75 + 0.75 * len(doc) / avg)
+            )
+        scores.append(score)
+    return scores
+
+
+def load_routing(home: Path) -> dict[str, Any]:
+    merged: dict[str, Any] = {
+        "schema": 1,
+        "skills": {},
+        "global_negative_triggers": [],
+    }
+    for path in (REPO_ROOT / "routing.json", home / "routing.json"):
+        if not path.exists():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        merged["skills"].update(data.get("skills", {}))
+        merged["global_negative_triggers"].extend(
+            data.get("global_negative_triggers", [])
+        )
+    return merged
+
+
+def match_negative(query: str, rules: list[dict[str, Any]]) -> dict[str, Any] | None:
+    for rule in rules or []:
+        pattern = str(rule.get("pattern", "")).strip()
+        if not pattern:
+            continue
+        try:
+            if not re.search(pattern, query, re.I):
+                continue
+        except re.error:
+            continue
+        unless = str(rule.get("unless", "")).strip()
+        if unless:
+            try:
+                if re.search(unless, query, re.I):
+                    continue
+            except re.error:
+                pass
+        return rule
+    return None
+
+
+def route_skill(
+    home: Path,
+    query: str,
+    host: str | None = None,
+    cwd: str | None = None,
+    limit: int = 5,
+    include_body: bool = True,
+) -> dict[str, Any]:
+    query = query.strip()
+    result: dict[str, Any] = {
+        "schema": 1,
+        "decision": "none",
+        "selected": None,
+        "confidence": 0.0,
+        "margin": 0.0,
+        "host": host,
+        "candidates": [],
+        "body": None,
+        "base_dir": None,
+        "content_hash": None,
+        "reason": "",
+    }
+    if not query or query.startswith("/") or query.lower() in TRIVIAL:
+        result["reason"] = "bypass"
+        return result
+    if (
+        query.startswith("[")
+        or "background process" in query.lower()
+        or query.lower().startswith(CONTROL_PREFIXES)
+    ):
+        result["reason"] = "control or internal message"
+        return result
+
+    routing = load_routing(home)
+    profile = profile_config(home)
+    routing_cfg = profile.get("routing", {}) or {}
+    global_hit = match_negative(query, routing.get("global_negative_triggers", []))
+    if global_hit and global_hit.get("severity") == "veto":
+        result["reason"] = f"global veto: {global_hit.get('pattern')}"
+        return result
+
+    records = load_catalog(home, quiet=True)
+    if not records:
+        result["reason"] = "empty catalog"
+        return result
+
+    candidates: list[dict[str, Any]] = []
+    q_lower = query.lower()
+    context_dir = Path(cwd).expanduser().resolve() if cwd else Path.cwd()
+    for record in records:
+        if not profile_allows_source(home, record.get("source", {}).get("id", "")):
+            continue
+        meta = (
+            routing["skills"].get(record["id"])
+            or routing["skills"].get(record["name"])
+            or {}
+        )
+        routing_meta = meta.get("routing", {})
+        if routing_meta.get("enabled", True) is False:
+            continue
+        requires = meta.get("requires", {}).get("tools", []) or []
+        if any(shutil.which(tool) is None for tool in requires):
+            continue
+        host_fit = meta.get("host_fit")
+        if host and host_fit and "*" not in host_fit and host not in host_fit:
+            continue
+        local_hit = match_negative(query, meta.get("negative_triggers", []))
+        if local_hit and local_hit.get("severity") == "veto":
+            continue
+
+        triggers = meta.get("triggers", {}) or {}
+        phrases = [str(item) for item in triggers.get("phrases", []) or []]
+        keywords = [str(item) for item in triggers.get("keywords", []) or []]
+        regexes = [str(item) for item in triggers.get("regex", []) or []]
+        examples = [
+            str(item)
+            for item in (meta.get("examples", {}) or {}).get("positive", []) or []
+        ]
+        capabilities = [str(item) for item in meta.get("capabilities", []) or []]
+        if not (phrases or keywords or regexes or examples):
+            keywords = tokenize(f"{record['name']} {record['description']}")[:12]
+
+        rule = 0.0
+        reasons: list[str] = []
+        for phrase in phrases:
+            if phrase.lower() in q_lower:
+                rule = 1.0
+                reasons.append(f"phrase:{phrase}")
+                break
+        if rule < 1.0:
+            for pattern in regexes:
+                try:
+                    if re.search(pattern, query, re.I):
+                        rule = 1.0
+                        reasons.append(f"regex:{pattern}")
+                        break
+                except re.error:
+                    continue
+        if rule < 1.0 and keywords:
+            matched = [word for word in keywords if word.lower() in q_lower]
+            if matched:
+                rule = 0.8 if len(matched) == len(keywords) else 0.4
+                reasons.append("keywords:" + ",".join(matched[:4]))
+        if local_hit and local_hit.get("severity") == "downrank":
+            rule = max(0.0, rule - 0.25)
+            reasons.append(f"downrank:{local_hit.get('pattern')}")
+
+        if not host_fit:
+            host_score = 0.5
+        elif "*" in host_fit or (host and host in host_fit):
+            host_score = 1.0
+        else:
+            host_score = 0.0
+        globs = meta.get("file_globs", []) or []
+        glob_score = 0.5
+        if globs:
+            glob_score = 0.0
+            for pattern in globs:
+                try:
+                    if next(context_dir.glob(str(pattern)), None) is not None:
+                        glob_score = 1.0
+                        break
+                except (OSError, ValueError):
+                    continue
+        ctx = (host_score + glob_score) / 2
+        priority = min(100.0, max(0.0, float(meta.get("priority", 50)))) / 100
+
+        doc_parts: list[str] = []
+        doc_parts += tokenize(record["name"]) * 3
+        doc_parts += tokenize(record["description"]) * 2
+        for phrase in phrases:
+            doc_parts += tokenize(phrase) * 3
+        for word in keywords:
+            doc_parts += tokenize(word) * 2
+        for example in examples:
+            doc_parts += tokenize(example) * 2
+        for capability in capabilities:
+            doc_parts += tokenize(capability) * 2
+        candidates.append(
+            {
+                "record": record,
+                "rule": rule,
+                "ctx": ctx,
+                "priority": priority,
+                "reasons": reasons,
+                "doc": doc_parts,
+            }
+        )
+
+    if not candidates:
+        result["reason"] = "no candidates"
+        return result
+
+    query_tokens = tokenize(query)
+    bm_scores = bm25(query_tokens, [item["doc"] for item in candidates])
+    high = max(bm_scores) if bm_scores else 0.0
+    low = min(bm_scores) if bm_scores else 0.0
+    for item, bm in zip(candidates, bm_scores):
+        lex = (bm - low) / (high - low) if high > low else 0.0
+        item["lex"] = lex
+        item["score"] = (
+            0.55 * lex + 0.25 * item["rule"] + 0.10 * item["ctx"] + 0.10 * item["priority"]
+        )
+    candidates.sort(key=lambda item: (-item["score"], item["record"]["name"]))
+    top = candidates[0]
+    second = candidates[1] if len(candidates) > 1 else None
+    margin = top["score"] - (second["score"] if second else 0.0)
+
+    suggest_threshold = float(routing_cfg.get("suggest", 0.45))
+    inject_threshold = float(routing_cfg.get("inject", 0.60))
+    margin_threshold = float(routing_cfg.get("margin", 0.08))
+    if top["score"] < suggest_threshold:
+        decision = "none"
+        reason = f"score below {suggest_threshold}"
+    elif top["score"] >= inject_threshold and (
+        margin >= margin_threshold or top["rule"] >= 0.90
+    ):
+        decision = "inject"
+        reason = "high confidence"
+    else:
+        decision = "suggest"
+        reason = "ambiguous"
+
+    def public(item: dict[str, Any]) -> dict[str, Any]:
+        nhosts = native_hosts_for(item["record"]["name"], home, cwd)
+        return {
+            "id": item["record"]["id"],
+            "name": item["record"]["name"],
+            "score": round(item["score"], 3),
+            "components": {
+                "lex": round(item["lex"], 3),
+                "rule": round(item["rule"], 3),
+                "ctx": round(item["ctx"], 3),
+                "priority": round(item["priority"], 3),
+            },
+            "reasons": item["reasons"][:6],
+            "source": item["record"]["source"],
+            "native_hosts": nhosts,
+            "native": bool(host and host in nhosts),
+        }
+
+    native_hosts = native_hosts_for(top["record"]["name"], home, cwd)
+    if decision == "inject" and host and host in native_hosts:
+        native_record = native_inventory(host, home, cwd).get(top["record"]["name"], {})
+        decision = "native"
+        selected = {
+            "id": f"native:{host}:{top['record']['name']}",
+            "name": top["record"]["name"],
+            "score": round(top["score"], 3),
+            "path": native_record.get("path"),
+            "native_hosts": native_hosts,
+            "reasons": ["native skill available"],
+        }
+        reason = "native skill available"
+    else:
+        selected = public(top) if decision == "inject" else None
+    result.update(
+        {
+            "decision": decision,
+            "selected": selected,
+            "confidence": round(top["score"], 3),
+            "margin": round(margin, 3),
+            "candidates": [public(item) for item in candidates[: max(1, limit)]],
+            "reason": reason,
+        }
+    )
+    if decision == "inject" and include_body:
+        try:
+            used = use_skill(home, top["record"]["id"], agent="router", quiet=True, host=host)
+            result["body"] = used["body"]
+            result["base_dir"] = used["base_dir"]
+            result["content_hash"] = used["content_hash"]
+        except SkillError as exc:
+            result["decision"] = "suggest"
+            result["selected"] = None
+            result["reason"] = f"body unavailable: {exc}"
+
+    log_entry = {
+        "ts": now_iso(),
+        "host": host,
+        "query_sha256": hashlib.sha256(query.encode("utf-8")).hexdigest(),
+        "query_preview": query[:80],
+        "decision": result["decision"],
+        "selected": result["selected"]["id"] if result["selected"] else None,
+        "confidence": result["confidence"],
+        "margin": result["margin"],
+        "candidates": [item["id"] for item in result["candidates"]],
+    }
+    with open(home / "routing.jsonl", "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+    return result
+
+
+def cmd_route(home: Path, args: argparse.Namespace) -> int:
+    result = route_skill(
+        home,
+        args.query,
+        host=args.host,
+        cwd=args.cwd,
+        limit=args.limit,
+        include_body=not args.no_body,
+    )
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+    print(f"decision: {result['decision']}")
+    if result["selected"]:
+        selected = result["selected"]
+        print(f"selected: {selected['id']} ({selected['confidence'] if 'confidence' in selected else selected['score']})")
+    print(f"confidence: {result['confidence']}  margin: {result['margin']}")
+    print(f"reason: {result['reason']}")
+    if result["body"]:
+        print(f"body: {len(result['body'])} chars; base_dir: {result['base_dir']}")
+        print("use --json to get the body")
+    if args.explain or result["decision"] != "inject":
+        for item in result["candidates"]:
+            print(
+                f"  {item['score']:.3f}  {item['id']}  "
+                f"lex={item['components']['lex']} rule={item['components']['rule']} "
+                f"ctx={item['components']['ctx']} "
+                f"{'; '.join(item['reasons'])}"
+            )
+    return 0
+
+
+def remote_search(query: str, limit: int, api_url: str) -> list[dict[str, Any]]:
+    url = api_url + ("&" if "?" in api_url else "?") + urlencode(
+        {"q": query, "limit": max(1, limit)}
+    )
+    request = Request(safe_http_url(url), headers={"User-Agent": f"ajia/{VERSION}"})
+    # The URL is constrained to http(s), with plain http limited to loopback.
+    # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
+    with urlopen(request, timeout=10) as response:
+        data = json.loads(response.read().decode("utf-8"))
+    results: list[dict[str, Any]] = []
+    for item in data.get("skills", []):
+        source = item.get("source") or ""
+        skill_id = item.get("skillId") or item.get("name") or ""
+        results.append(
+            {
+                "id": item.get("id"),
+                "name": item.get("name"),
+                "source": source,
+                "skill_id": skill_id,
+                "installs": item.get("installs", 0),
+                "install": f"npx skills add {source} -s {skill_id} -g -y",
+                "add": f"ajia remote add {source} --skill {skill_id}",
+            }
+        )
+    return results
+
+
+
+def github_license(slug: str) -> str:
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", slug):
+        return "unknown"
+    gh = shutil.which("gh")
+    if gh:
+        result = subprocess.run(
+            [gh, "api", f"repos/{slug}", "--jq", ".license.spdx_id"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+        value = result.stdout.strip()
+        if result.returncode == 0 and value and value != "null":
+            return value
+    try:
+        request = Request(
+            safe_http_url(f"https://api.github.com/repos/{slug}"),
+            headers={
+                "User-Agent": f"ajia/{VERSION}",
+                "Accept": "application/vnd.github+json",
+            },
+        )
+        # Fixed GitHub host; slug is validated above.
+        # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
+        with urlopen(request, timeout=10) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        return str((data.get("license") or {}).get("spdx_id") or "unknown")
+    except Exception:  # noqa: BLE001
+        return "unknown"
+
+
+def normalize_remote_source(source: str) -> tuple[str, str, str]:
+    raw = source.strip()
+    if raw.startswith("git@"):
+        url = raw if raw.endswith(".git") else raw + ".git"
+        slug = raw.split(":", 1)[-1].removesuffix(".git").strip("/")
+    elif raw.startswith(("http://", "https://")):
+        url = raw if raw.endswith(".git") else raw + ".git"
+        slug = raw.split("github.com/", 1)[-1].strip("/").removesuffix(".git")
+    else:
+        slug = raw.strip("/").removesuffix(".git")
+        url = f"https://github.com/{slug}.git"
+    parts = slug.split("/")
+    if len(parts) != 2 or not all(parts):
+        raise SkillError(f"expected owner/repo, got: {source}")
+    source_id = "remote-" + re.sub(r"[^a-z0-9]+", "-", slug.lower()).strip("-")
+    return source_id, slug, url
+
+
+def cmd_remote_add(home: Path, args: argparse.Namespace) -> int:
+    source_id, slug, url = normalize_remote_source(args.source)
+    sources = load_sources(home)
+    existing = next((item for item in sources if item.get("id") == source_id), None)
+    license_value = (
+        args.license
+        or (existing or {}).get("license")
+        or github_license(slug)
+    )
+    if existing:
+        existing.update(
+            {
+                "type": "git",
+                "url": url,
+                "ref": args.ref,
+                "enabled": True,
+            }
+        )
+        if license_value:
+            existing["license"] = license_value
+        source = existing
+    else:
+        source = {
+            "id": source_id,
+            "type": "git",
+            "url": url,
+            "ref": args.ref,
+            "enabled": True,
+            "license": license_value,
+        }
+        sources.append(source)
+    write_sources(home, sources)
+    action = sync_git_source(source, home, refresh=args.refresh)
+    build_catalog(home, quiet=args.json)
+    records = load_catalog(home, quiet=True)
+    matches = [
+        record
+        for record in records
+        if record.get("source", {}).get("id") == source_id
+        and (
+            record.get("name") == args.skill
+            or record.get("id", "").endswith("/" + args.skill)
+        )
+    ]
+    if not matches:
+        available = sorted(
+            record["name"]
+            for record in records
+            if record.get("source", {}).get("id") == source_id
+        )
+        raise SkillError(
+            f"skill not found in {slug}: {args.skill}; available: "
+            + ", ".join(available[:20])
+        )
+    record = matches[0]
+    result = {
+        "source_id": source_id,
+        "source": slug,
+        "skill": args.skill,
+        "catalog_id": record["id"],
+        "name": record["name"],
+        "license": record.get("license", "unknown"),
+        "license_source": record.get("license_source", "unknown"),
+        "url": url,
+        "clone": action,
+    }
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(f"source:  {source_id} ({slug})")
+        print(f"skill:   {record['id']}")
+        print(f"license: {result['license']} ({result['license_source']})")
+        print(f"next:    ajia use {record['id']} --json")
+        print(f"         ajia scan {record['id']}")
+        print(f"         ajia promote {record['id']} --dry-run")
+    return 0
+
+
+def cmd_remote_search(home: Path, args: argparse.Namespace) -> int:
+    try:
+        results = remote_search(args.query, args.limit, args.api_url)
+    except Exception as exc:  # noqa: BLE001
+        print(f"error: remote search failed: {exc}", file=sys.stderr)
+        return 1
+    if args.json:
+        print(json.dumps(results, ensure_ascii=False, indent=2))
+        return 0
+    for item in results:
+        print(
+            f"{item['installs']:>9}  {item['name']}  {item['source']}  "
+            f"{item['install']}"
+        )
+    return 0
+
+
+def cmd_remote_install(home: Path, args: argparse.Namespace) -> int:
+    npx = shutil.which("npx")
+    if not npx:
+        raise SkillError("npx is not installed")
+    cmd = [npx, "-y", "skills", "add", args.source, "-s", args.skill, "-a", args.agent]
+    if not args.project:
+        cmd.append("-g")
+    cmd.append("-y")
+    print(shlex.join(cmd))
+    if not args.yes:
+        print("dry run; add --yes to run the upstream installer")
+        return 0
+    return subprocess.run(cmd, check=False).returncode
+
+def mcp_server(home: Path, host: str | None = None) -> int:
+    load_catalog(home, quiet=True)
+
+    def send(payload: dict[str, Any]) -> None:
+        sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        sys.stdout.flush()
+
+    def response(request_id: Any, result: Any) -> None:
+        send({"jsonrpc": "2.0", "id": request_id, "result": result})
+
+    def error(request_id: Any, code: int, message: str) -> None:
+        send(
+            {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "error": {"code": code, "message": message},
+            }
+        )
+
+    tools = [
+        {
+            "name": "ajia_search",
+            "description": (
+                "Search the local ajiaskill catalog of source skills. Use only when no "
+                "installed or native skill clearly matches the task. Returns metadata; "
+                "does not install."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "What the task needs."},
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 20,
+                        "default": 5,
+                    },
+                    "host": {
+                        "type": "string",
+                        "description": "Optional host id, such as opencode, pi, or hermes.",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+        {
+            "name": "ajia_use",
+            "description": (
+                "Return an uninstalled source skill's full SKILL.md and base directory. "
+                "Follow it in place. Do not copy it into a project or host skill directory; "
+                "that is installation. Does not install or promote."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "A result id from ajia_search.",
+                    },
+                    "host": {
+                        "type": "string",
+                        "description": "Optional host id, such as opencode, pi, or hermes.",
+                    },
+                },
+                "required": ["id"],
+            },
+        },
+    ]
+
+    for raw in sys.stdin:
+        line = raw.strip()
+        if not line:
+            continue
+        try:
+            request = json.loads(line)
+        except json.JSONDecodeError:
+            error(None, -32700, "parse error")
+            continue
+        method = request.get("method")
+        request_id = request.get("id")
+        params = request.get("params") or {}
+        if method == "initialize":
+            response(
+                request_id,
+                {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {"tools": {}},
+                    "serverInfo": {"name": "ajiaskill", "version": VERSION},
+                    "instructions": POLICY,
+                },
+            )
+        elif method == "notifications/initialized":
+            continue
+        elif method == "tools/list":
+            response(request_id, {"tools": tools})
+        elif method == "tools/call":
+            name = params.get("name")
+            arguments = params.get("arguments") or {}
+            call_host = str(arguments.get("host") or host or "") or None
+            try:
+                if name == "ajia_search":
+                    result: Any = search_catalog(
+                        home,
+                        str(arguments.get("query", "")),
+                        limit=int(arguments.get("limit", 5)),
+                        quiet=True,
+                        host=call_host,
+                    )
+                elif name == "ajia_use":
+                    result = use_skill(
+                        home, str(arguments.get("id", "")), quiet=True, host=call_host
+                    )
+                else:
+                    raise SkillError(f"unknown tool: {name}")
+                try:
+                    selected = None
+                    if isinstance(result, dict):
+                        selected = result.get("id")
+                    with open(home / "mcp-calls.jsonl", "a", encoding="utf-8") as handle:
+                        handle.write(
+                            json.dumps(
+                                {
+                                    "ts": now_iso(),
+                                    "host": call_host,
+                                    "tool": name,
+                                    "arguments": arguments,
+                                    "ok": True,
+                                    "selected": selected,
+                                },
+                                ensure_ascii=False,
+                            )
+                            + "\n"
+                        )
+                except OSError:
+                    pass
+                response(
+                    request_id,
+                    {
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": json.dumps(result, ensure_ascii=False),
+                            }
+                        ],
+                        "isError": False,
+                    },
+                )
+            except (SkillError, ValueError) as exc:
+                response(
+                    request_id,
+                    {
+                        "content": [{"type": "text", "text": str(exc)}],
+                        "isError": True,
+                    },
+                )
+        elif method == "ping":
+            response(request_id, {})
+        else:
+            error(request_id, -32601, f"method not found: {method}")
+    return 0
+
+
+def cmd_init(home: Path, args: argparse.Namespace) -> int:
+    ensure_dirs(home)
+    sources = load_sources(home)
+    print(f"home:     {home}")
+    print(f"sources:  {paths(home)['sources']} ({len(sources)} configured)")
+    print(f"catalog:  {paths(home)['catalog']}")
+    print(f"mcp:      {sys.executable} {Path(__file__).resolve()} mcp")
+    print("next:     ajia source sync")
+    return 0
+
+
+def cmd_source_list(home: Path, args: argparse.Namespace) -> int:
+    sources = load_sources(home)
+    for source in sources:
+        enabled = "on " if source.get("enabled") else "off"
+        target = source.get("path") or source.get("url") or ""
+        ref = source.get("ref") or ""
+        print(f"{enabled}  {source.get('id',''):<18} {source.get('type',''):<6} {target} {ref}".rstrip())
+    return 0
+
+
+def cmd_source_add(home: Path, args: argparse.Namespace) -> int:
+    sources = load_sources(home)
+    if any(source.get("id") == args.id for source in sources):
+        raise SkillError(f"source already exists: {args.id}")
+    kind = args.type
+    if kind == "auto":
+        kind = "git" if args.target.startswith(("http://", "https://", "git@")) else "local"
+    source: dict[str, Any] = {"id": args.id, "type": kind, "enabled": bool(args.enable)}
+    if kind == "git":
+        source["url"] = args.target
+        source["ref"] = args.ref or "main"
+        source["enabled"] = bool(args.enable)
+    else:
+        source["path"] = str(Path(args.target).expanduser().resolve())
+        source["enabled"] = True if not args.enable else True
+    if getattr(args, "license", None):
+        source["license"] = args.license
+    sources.append(source)
+    write_sources(home, sources)
+    print(f"added {args.id}; run: ajia source sync {args.id}")
+    return 0
+
+
+def cmd_source_toggle(home: Path, source_id: str, enabled: bool) -> int:
+    sources = load_sources(home)
+    for source in sources:
+        if source.get("id") == source_id:
+            source["enabled"] = enabled
+            write_sources(home, sources)
+            print(f"{source_id}: {'enabled' if enabled else 'disabled'}")
+            return 0
+    raise SkillError(f"source not found: {source_id}")
+
+
+def cmd_source_sync(home: Path, args: argparse.Namespace) -> int:
+    sources = load_sources(home)
+    if args.ids:
+        selected = [source for source in sources if source.get("id") in set(args.ids)]
+    else:
+        selected = [source for source in sources if source.get("enabled")]
+    if not selected:
+        raise SkillError("no sources selected; enable one with: ajia source enable <id>")
+    for source in selected:
+        source_id = source.get("id", "")
+        if source.get("type") == "git":
+            try:
+                action = sync_git_source(source, home, refresh=args.refresh)
+                print(f"{source_id}: {action}")
+            except SkillError as exc:
+                print(f"{source_id}: {exc}", file=sys.stderr)
+        else:
+            root = source_path(source, home)
+            if root and root.is_dir():
+                print(f"{source_id}: local {root}")
+            else:
+                print(f"{source_id}: missing {root}", file=sys.stderr)
+    build_catalog(home)
+    return 0
+
+
+def cmd_catalog_build(home: Path, args: argparse.Namespace) -> int:
+    build_catalog(home)
+    return 0
+
+
+def cmd_catalog_stats(home: Path, args: argparse.Namespace) -> int:
+    records = load_catalog(home)
+    manifest = read_json(paths(home)["manifest"], {})
+    by_source: dict[str, int] = {}
+    generated = 0
+    for record in records:
+        source_id = record.get("source", {}).get("id", "?")
+        by_source[source_id] = by_source.get(source_id, 0) + 1
+        if record.get("generated"):
+            generated += 1
+    print(f"skills:   {len(records)}")
+    print(f"generated:{generated}")
+    print(f"digest:   {manifest.get('digest', '?')}")
+    for source_id, count in sorted(by_source.items()):
+        print(f"  {source_id:<18} {count}")
+    return 0
+
+
+def cmd_search(home: Path, args: argparse.Namespace) -> int:
+    results = search_catalog(
+        home,
+        args.query,
+        limit=args.limit,
+        source=args.source,
+        host=args.host,
+        cwd=args.cwd,
+    )
+    if args.json:
+        print(json.dumps(results, ensure_ascii=False, indent=2))
+        return 0
+    if not results:
+        print("no matches")
+        return 0
+    for result in results:
+        description = result["description"].replace("\n", " ")[:110]
+        marker = "  [native]" if result.get("native") else ""
+        print(f"{result['score']:>4}  {result['id']}  {description}{marker}")
+    return 0
+
+
+def cmd_use(home: Path, args: argparse.Namespace) -> int:
+    result = use_skill(home, args.id, agent=args.agent, host=args.host)
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(result["body"])
+    return 0
+
+
+
+def cmd_native(home: Path, args: argparse.Namespace) -> int:
+    hosts = load_hosts(home).get("hosts", {})
+    selected = [args.host] if args.host else list(hosts)
+    if args.host and args.host not in hosts:
+        raise SkillError(f"unknown host: {args.host}")
+    rows: list[dict[str, Any]] = []
+    for host in selected:
+        rows.extend(
+            native_inventory(host, home, args.cwd).values()
+        )
+    if args.json:
+        print(json.dumps(rows, ensure_ascii=False, indent=2))
+        return 0
+    for row in sorted(rows, key=lambda item: (item["host"], item["name"])):
+        state = "owned" if row["owned"] else "native"
+        print(f"{row['host']:<9} {state:<6} {row['name']:<32} {row['path']}")
+    return 0
+
+
+def cmd_rollback(home: Path, args: argparse.Namespace) -> int:
+    lock = read_json(paths(home)["lock"], {"schema": 1, "promotions": {}})
+    entry = (lock.get("promotions") or {}).get(args.id)
+    if not entry:
+        raise SkillError(f"not promoted: {args.id}")
+    removed: list[str] = []
+    restored: list[str] = []
+    for target in entry.get("targets", []):
+        dest = Path(target["dest"])
+        backup = Path(target["backup"]) if target.get("backup") else None
+        marker = read_json(dest / ".ajia-promoted.json", {})
+        if marker.get("id") != entry["id"]:
+            print(f"skip {dest} (not owned or already gone)")
+            continue
+        if dest.exists():
+            shutil.rmtree(dest)
+            removed.append(str(dest))
+        if backup and backup.exists():
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(backup), str(dest))
+            restored.append(str(dest))
+    lock["promotions"].pop(args.id, None)
+    write_json(paths(home)["lock"], lock)
+    print(json.dumps({"rolled_back": args.id, "removed": removed, "restored": restored}, indent=2))
+    return 0
+
+
+
+def cmd_generated(home: Path, args: argparse.Namespace) -> int:
+    records = [
+        record for record in load_catalog(home) if record.get("generated")
+    ]
+    if args.json:
+        print(json.dumps(records, ensure_ascii=False, indent=2))
+        return 0
+    for record in records:
+        print(
+            f"{record.get('generated_by') or '?':<8} "
+            f"{record.get('curator_state') or '-':<9} "
+            f"{record.get('use_count', 0):>4} "
+            f"{record['id']}"
+        )
+    return 0
+
+
+def cmd_profile(home: Path, args: argparse.Namespace) -> int:
+    profiles = load_profiles(home)
+    active = active_profile_name(home)
+    if args.profile_command == "list":
+        for name in sorted(profiles.get("profiles", {})):
+            print(f"{'*' if name == active else ' '} {name}")
+        return 0
+    if args.profile_command == "show":
+        name = args.name or active
+        config = profile_config(home, name)
+        if args.json:
+            print(json.dumps(config, ensure_ascii=False, indent=2))
+        else:
+            print(f"profile: {name}")
+            print(f"sources: {', '.join(config.get('sources', ['*']))}")
+            print(f"hosts:   {', '.join(config.get('hosts', []))}")
+            print(f"routing: {json.dumps(config.get('routing', {}))}")
+            print(f"safety:  {json.dumps(config.get('safety', {}))}")
+        return 0
+    if args.profile_command == "use":
+        if args.name not in profiles.get("profiles", {}):
+            raise SkillError(f"unknown profile: {args.name}")
+        (home / "profile").write_text(args.name + "\n", encoding="utf-8")
+        print(f"active profile: {args.name}")
+        return 0
+    raise SkillError("unknown profile command")
+
+
+def cmd_foundry(home: Path, args: argparse.Namespace) -> int:
+    foundry = paths(home)["foundry"]
+    ensure_dirs(home)
+    if args.foundry_command == "init":
+        foundry.mkdir(parents=True, exist_ok=True)
+        print(f"foundry: {foundry}")
+        print("write candidates to <foundry>/<slug>/SKILL.md, then: ajia foundry sync")
+        return 0
+    if args.foundry_command == "sync":
+        build_catalog(home)
+    records = [
+        record
+        for record in load_catalog(home)
+        if record.get("source", {}).get("id") == "foundry"
+    ]
+    if args.json:
+        print(json.dumps(records, ensure_ascii=False, indent=2))
+        return 0
+    for record in records:
+        print(f"{record['id']}  {record['description'][:100]}")
+    return 0
+
+
+def cmd_status(home: Path, args: argparse.Namespace) -> int:
+    sources = load_sources(home)
+    records = load_catalog(home, quiet=True)
+    trials = list(paths(home)["trials"].glob("*/trial.json"))
+    print(f"home:    {home}")
+    print(f"sources: {len(sources)} ({sum(1 for s in sources if s.get('enabled'))} enabled)")
+    print(f"skills:  {len(records)}")
+    print(f"trials:  {len(trials)}")
+    print(f"mcp:     {sys.executable} {Path(__file__).resolve()} mcp")
+    print(f"profile: {active_profile_name(home)}")
+    hosts = load_hosts(home).get("hosts", {})
+    for host in hosts:
+        print(f"native:  {host:<9} {len(native_names(host, home, os.getcwd()))}")
+    return 0
+
+
+def cmd_doctor(home: Path, args: argparse.Namespace) -> int:
+    p = paths(home)
+    checks = [
+        ("home", p["home"].exists()),
+        ("sources.yaml", p["sources"].exists()),
+        ("catalog", p["skills"].exists()),
+        ("hosts.json", (REPO_ROOT / "hosts.json").exists()),
+        ("profiles.json", (REPO_ROOT / "profiles.json").exists()),
+        ("git", shutil.which("git") is not None),
+        ("python", sys.version_info >= (3, 10)),
+        ("skillspector", shutil.which("skillspector") is not None),
+        ("skillevaluator", shutil.which("skillevaluator") is not None),
+    ]
+    for name, ok in checks:
+        print(f"{'ok  ' if ok else 'warn'} {name}")
+    sources = load_sources(home)
+    enabled = [s for s in sources if s.get("enabled")]
+    print(f"ok   enabled sources: {len(enabled)}")
+    print(f"ok   mcp command: {sys.executable} {Path(__file__).resolve()} mcp")
+    return 0 if all(ok for name, ok in checks if name in {"home", "sources.yaml", "catalog"}) else 1
+
+
+def cmd_policy(home: Path, args: argparse.Namespace) -> int:
+    print(POLICY)
+    return 0
+
+
+def cmd_setup(home: Path, args: argparse.Namespace) -> int:
+    python = shlex.quote(sys.executable)
+    script = shlex.quote(str(Path(__file__).resolve()))
+    host = args.host
+    if host == "opencode":
+        print(f"opencode mcp add --global ajiaskill -- {python} {script} mcp --host opencode")
+    elif host == "pi":
+        print(f"pi mcp add ajiaskill -- {python} {script} mcp --host pi")
+    elif host == "hermes":
+        print(f"hermes mcp add ajiaskill --command {python} --args {script} mcp --host hermes")
+    elif host == "codex":
+        print(f"codex mcp add ajiaskill -- {python} {script} mcp --host codex")
+    elif host == "claude":
+        print(f"claude mcp add -s user ajiaskill -- {python} {script} mcp --host claude")
+    elif host == "omp":
+        print(
+            json.dumps(
+                {
+                    "mcpServers": {
+                        "ajiaskill": {
+                            "command": sys.executable,
+                            "args": [str(Path(__file__).resolve()), "mcp", "--host", "omp"],
+                        }
+                    }
+                },
+                indent=2,
+            )
+        )
+    else:
+        print(
+            json.dumps(
+                {
+                    "mcpServers": {
+                        "ajiaskill": {
+                            "command": sys.executable,
+                            "args": [str(Path(__file__).resolve()), "mcp"],
+                        }
+                    }
+                },
+                indent=2,
+            )
+        )
+    print()
+    print("policy:")
+    print(POLICY)
+    return 0
+
+
+
+VERDICT_RANK = {"allow": 0, "warn": 1, "block": 2}
+
+
+def worse_verdict(left: str, right: str) -> str:
+    return left if VERDICT_RANK.get(left, 0) >= VERDICT_RANK.get(right, 0) else right
+
+
+def run_evaluator_report(
+    evaluator: str,
+    command: str,
+    skill_dir: Path,
+    out_dir: Path,
+    filename: str,
+) -> tuple[dict[str, Any] | None, str | None]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        result = subprocess.run(
+            [evaluator, command, str(skill_dir), "-r", "json", "-o", str(out_dir)],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return None, str(exc)[:300]
+    path = out_dir / filename
+    if not path.exists():
+        return None, (result.stderr or result.stdout or f"exit {result.returncode}")[:300]
+    try:
+        return json.loads(path.read_text(encoding="utf-8")), None
+    except (OSError, json.JSONDecodeError) as exc:
+        return None, str(exc)[:300]
+
+
+def eval_summary(
+    data: dict[str, Any] | None, path: Path | None, error: str | None = None
+) -> dict[str, Any]:
+    if not data:
+        return {
+            "available": False,
+            "report": str(path) if path else None,
+            "error": error,
+        }
+    counts = data.get("severity_counts") or {}
+    total = sum(
+        int(counts.get(key, 0) or 0)
+        for key in ("critical", "high", "medium", "low")
+    )
+    return {
+        "available": True,
+        "passed": data.get("overall_passed"),
+        "incomplete": bool(data.get("incomplete_scans"))
+        or data.get("overall_status") == "incomplete",
+        "severity_counts": counts,
+        "findings": total,
+        "total_errors": data.get("total_errors", 0),
+        "total_warnings": data.get("total_warnings", 0),
+        "report": str(path) if path else None,
+        "error": None,
+    }
+
+
+def scan_path(home: Path, record: dict[str, Any]) -> Path:
+    return home / "scans" / f"{safe_id(record['id'])}.json"
+
+
+def scan_skill(home: Path, record: dict[str, Any], builtin_only: bool = False) -> dict[str, Any]:
+    skill_dir = Path(record["source_path"])
+    findings: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str, int]] = set()
+
+    def add(severity: str, rule: str, rel: str, line: int, evidence: str) -> None:
+        key = (severity, rule, rel, line)
+        if key in seen:
+            return
+        seen.add(key)
+        findings.append(
+            {
+                "severity": severity,
+                "rule": rule,
+                "file": rel,
+                "line": line,
+                "evidence": evidence.strip()[:180],
+            }
+        )
+
+    for root, dirs, names in os.walk(skill_dir):
+        root_path = Path(root)
+        for dirname in list(dirs):
+            if (root_path / dirname).is_symlink():
+                add("high", "symlink", (root_path / dirname).relative_to(skill_dir).as_posix(), 0, "symlink")
+                dirs.remove(dirname)
+        dirs[:] = sorted(
+            d for d in dirs if d not in SKIP_DIRS and not d.startswith(".")
+        )
+        for name in sorted(names):
+            path = root_path / name
+            rel = path.relative_to(skill_dir).as_posix()
+            if path.is_symlink():
+                add("high", "symlink", rel, 0, "symlink")
+                continue
+            if path.suffix.lower() not in SCAN_SUFFIXES:
+                continue
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            if path.suffix.lower() in SCRIPT_SUFFIXES and os.access(path, os.X_OK):
+                add("medium", "script", rel, 0, "executable script")
+            for lineno, line in enumerate(text.splitlines(), 1):
+                for severity, rule, pattern in SCAN_RULES:
+                    if pattern.search(line):
+                        add(severity, rule, rel, lineno, line)
+
+    license_value = str(record.get("license") or "unknown").strip()
+    license_source = str(
+        record.get("license_source")
+        or ("frontmatter" if license_value.lower() not in {"", "unknown"} else "unknown")
+    )
+    if license_source == "unknown":
+        for candidate in ("LICENSE", "LICENSE.txt", "LICENSE.md", "COPYING"):
+            if (skill_dir / candidate).exists():
+                license_value = candidate
+                license_source = "file"
+                break
+    if license_source == "unknown":
+        add("medium", "license-unknown", "LICENSE", 0, "no license found")
+
+    severity_rank = {"low": 1, "medium": 2, "high": 3, "critical": 4}
+    builtin_verdict = "allow"
+    if any(item["severity"] == "critical" for item in findings):
+        builtin_verdict = "block"
+    elif any(item["severity"] in {"high", "medium"} for item in findings):
+        builtin_verdict = "warn"
+
+    tools: dict[str, Any] = {
+        "skillspector": {
+            "available": False,
+            "score": None,
+            "severity": None,
+            "recommendation": None,
+            "issues": 0,
+            "error": None,
+        },
+        "skillevaluator": {
+            "available": bool(shutil.which("skillevaluator")),
+            "passed": None,
+            "severity_counts": {},
+            "findings": 0,
+            "report": None,
+            "incomplete": False,
+            "error": None,
+        },
+    }
+    external_verdict = "allow"
+    if not builtin_only:
+        evaluator = shutil.which("skillevaluator")
+        if evaluator:
+            out_dir = home / "scans" / safe_id(record["id"]) / "evaluator"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                result = subprocess.run(
+                    [evaluator, "security-scan", str(skill_dir), "-r", "json", "-o", str(out_dir)],
+                    capture_output=True,
+                    text=True,
+                    timeout=180,
+                    check=False,
+                )
+                report_file = out_dir / "skillevaluator-security.json"
+                if report_file.exists():
+                    data = json.loads(report_file.read_text(encoding="utf-8"))
+                    counts = data.get("severity_counts") or {}
+                    total = sum(
+                        int(counts.get(key, 0) or 0)
+                        for key in ("critical", "high", "medium", "low")
+                    )
+                    tools["skillevaluator"].update(
+                        {
+                            "passed": data.get("overall_passed"),
+                            "severity_counts": counts,
+                            "findings": total,
+                            "report": str(report_file),
+                        }
+                    )
+                    incomplete = bool(data.get("incomplete_scans")) or data.get("overall_status") == "incomplete"
+                    tools["skillevaluator"]["incomplete"] = incomplete
+                    if total > 0 or (not incomplete and data.get("overall_passed") is not False):
+                        tools["skillspector"].update(
+                            {"available": True, "via": "skillevaluator", "issues": total}
+                        )
+                        if int(counts.get("critical", 0) or 0) > 0:
+                            external_verdict = "block"
+                        elif int(counts.get("high", 0) or 0) > 0 or int(counts.get("medium", 0) or 0) > 0:
+                            external_verdict = "warn"
+                        elif not incomplete and data.get("overall_passed") is False:
+                            external_verdict = "warn"
+                else:
+                    tools["skillevaluator"]["error"] = (
+                        (result.stderr or result.stdout or f"exit {result.returncode}")[:300]
+                    )
+            except Exception as exc:  # noqa: BLE001
+                tools["skillevaluator"]["error"] = str(exc)[:300]
+
+            eval_root = home / "scans" / safe_id(record["id"])
+            pii_path = eval_root / "pii" / "skillevaluator-pii.json"
+            lint_path = eval_root / "lint" / "skillevaluator-script-lint.json"
+            pii_data, pii_error = run_evaluator_report(
+                evaluator, "pii-scan", skill_dir, pii_path.parent, pii_path.name
+            )
+            lint_data, lint_error = run_evaluator_report(
+                evaluator,
+                "lint-scripts",
+                skill_dir,
+                lint_path.parent,
+                lint_path.name,
+            )
+            tools["skillevaluator"]["pii"] = eval_summary(pii_data, pii_path, pii_error)
+            tools["skillevaluator"]["lint"] = eval_summary(lint_data, lint_path, lint_error)
+            pii = tools["skillevaluator"]["pii"]
+            if pii.get("available"):
+                pii_counts = pii.get("severity_counts") or {}
+                if int(pii_counts.get("critical", 0) or 0) > 0 or int(pii_counts.get("high", 0) or 0) > 0:
+                    external_verdict = "block"
+                elif int(pii_counts.get("medium", 0) or 0) > 0 or pii.get("passed") is False:
+                    external_verdict = worse_verdict(external_verdict, "warn")
+            lint = tools["skillevaluator"]["lint"]
+            if lint.get("available"):
+                lint_counts = lint.get("severity_counts") or {}
+                if (
+                    int(lint.get("total_errors", 0) or 0) > 0
+                    or int(lint_counts.get("critical", 0) or 0) > 0
+                    or int(lint_counts.get("high", 0) or 0) > 0
+                ):
+                    external_verdict = worse_verdict(external_verdict, "warn")
+
+        if not tools["skillspector"].get("via"):
+            scanner = shutil.which("skillspector")
+            if scanner:
+                tools["skillspector"]["available"] = True
+                try:
+                    result = subprocess.run(
+                        [scanner, "scan", str(skill_dir), "--no-llm", "--format", "json"],
+                        capture_output=True,
+                        text=True,
+                        timeout=180,
+                        check=False,
+                    )
+                    if result.stdout.strip():
+                        data = json.loads(result.stdout)
+                        risk = data.get("risk_assessment") or {}
+                        tools["skillspector"].update(
+                            {
+                                "score": risk.get("score"),
+                                "severity": risk.get("severity"),
+                                "recommendation": risk.get("recommendation"),
+                                "issues": len(data.get("issues") or []),
+                            }
+                        )
+                        score = float(risk.get("score") or 0)
+                        severity = str(risk.get("severity") or "").upper()
+                        recommendation = str(risk.get("recommendation") or "").upper()
+                        if score > 50 or severity == "CRITICAL" or "DO NOT" in recommendation:
+                            external_verdict = "block"
+                        elif score > 20 or severity in {"HIGH", "MEDIUM"}:
+                            external_verdict = "warn"
+                    else:
+                        tools["skillspector"]["error"] = (
+                            result.stderr.strip()[:300] or f"exit {result.returncode}"
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    tools["skillspector"]["error"] = str(exc)[:300]
+
+    rank = {"allow": 0, "warn": 1, "block": 2}
+    verdict = max((builtin_verdict, external_verdict), key=lambda value: rank[value])
+    findings.sort(key=lambda item: (-severity_rank.get(item["severity"], 0), item["file"], item["line"]))
+    return {
+        "schema": 1,
+        "id": record["id"],
+        "content_hash": record["content_hash"],
+        "scanned_at": now_iso(),
+        "verdict": verdict,
+        "builtin_verdict": builtin_verdict,
+        "findings": findings,
+        "license": {"value": license_value, "source": license_source},
+        "tools": tools,
+    }
+
+
+def cmd_scan(home: Path, args: argparse.Namespace) -> int:
+    record = resolve_skill(home, args.id)
+    report = scan_skill(home, record, builtin_only=args.builtin)
+    path = scan_path(home, record)
+    write_json(path, report)
+    if args.json:
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        ev = report["tools"]["skillevaluator"]
+        sp = report["tools"]["skillspector"]
+        print(f"verdict: {report['verdict']}")
+        print(f"builtin: {report['builtin_verdict']}")
+        print(f"findings: {len(report['findings'])}")
+        print(f"license: {report['license']['value']} ({report['license']['source']})")
+        if ev.get("report"):
+            print(
+                f"skillevaluator: passed={ev['passed']} incomplete={ev.get('incomplete')} "
+                f"severity={ev['severity_counts']} findings={ev['findings']}"
+            )
+        if sp.get("score") is not None:
+            print(
+                f"skillspector: score={sp['score']} severity={sp['severity']} "
+                f"recommendation={sp['recommendation']} issues={sp['issues']}"
+            )
+        elif sp.get("via"):
+            print(f"skillspector: via {sp['via']} issues={sp['issues']}")
+        else:
+            print("skillspector: not installed (builtin only)")
+        for key in ("pii", "lint"):
+            part = ev.get(key)
+            if part and part.get("available"):
+                print(
+                    f"{key}: passed={part['passed']} incomplete={part['incomplete']} "
+                    f"severity={part['severity_counts']} findings={part['findings']}"
+                )
+        print(f"report: {path}")
+    return 0 if report["verdict"] != "block" else 1
+
+
+def cmd_promote(home: Path, args: argparse.Namespace) -> int:
+    record = resolve_skill(home, args.id)
+    trial_path = home / "trials" / safe_id(record["id"]) / "trial.json"
+    if not trial_path.exists():
+        raise SkillError("no trial for this skill; run: ajia use <id> first")
+    report = scan_skill(home, record, builtin_only=args.builtin)
+    scan_file = scan_path(home, record)
+    write_json(scan_file, report)
+    if report["verdict"] == "block":
+        raise SkillError(f"scan blocked promotion; see {scan_file}")
+    if report["verdict"] == "warn" and not args.force:
+        raise SkillError(
+            f"scan is caution; review {scan_file} and rerun with --force"
+        )
+    license_value = report["license"]["value"]
+    if str(license_value).lower() in {"", "unknown"} and not args.allow_unknown_license:
+        raise SkillError(
+            "license is unknown; review it and rerun with --allow-unknown-license"
+        )
+
+    default_name = record["name"] if str(record["name"]).startswith("ajia-") else f"ajia-{record['name']}"
+    name = args.name or default_name
+    if not NAME_RE.fullmatch(name):
+        raise SkillError(f"invalid promotion name: {name}")
+
+    if args.project:
+        project = Path(args.project).expanduser().resolve()
+        targets = [project / ".agents" / "skills", project / ".claude" / "skills"]
+    elif args.target:
+        targets = [Path(item).expanduser().resolve() for item in args.target]
+    else:
+        targets = [
+            Path.home() / ".agents" / "skills",
+            Path.home() / ".claude" / "skills",
+        ]
+
+    store_tree = home / "store" / "sha256" / record["content_hash"] / "tree"
+    if not store_tree.is_dir():
+        raise SkillError("store copy is missing; run: ajia use <id> first")
+
+    operations: list[dict[str, Any]] = []
+    for target in targets:
+        dest = target / name
+        action = "copy"
+        if dest.exists():
+            marker = read_json(dest / ".ajia-promoted.json", {})
+            if marker.get("id") == record["id"]:
+                action = "replace"
+            else:
+                action = "conflict"
+        operations.append(
+            {"target": str(target), "dest": str(dest), "action": action}
+        )
+    conflicts = [item for item in operations if item["action"] == "conflict"]
+    if conflicts:
+        raise SkillError(
+            "target already exists and is not owned by ajia: "
+            + ", ".join(item["dest"] for item in conflicts)
+        )
+
+    plan = {
+        "id": record["id"],
+        "name": name,
+        "content_hash": record["content_hash"],
+        "scan": {"verdict": report["verdict"], "report": str(scan_file)},
+        "license": report["license"],
+        "operations": operations,
+        "dry_run": bool(args.dry_run),
+    }
+    if args.dry_run:
+        print(json.dumps(plan, ensure_ascii=False, indent=2))
+        return 0
+    if not args.yes:
+        print(json.dumps(plan, ensure_ascii=False, indent=2))
+        print("approval required; rerun with --yes to apply")
+        return 2
+
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    lock = read_json(paths(home)["lock"], {"schema": 1, "promotions": {}})
+    entry: dict[str, Any] = {
+        "id": record["id"],
+        "name": name,
+        "content_hash": record["content_hash"],
+        "scan": {"verdict": report["verdict"], "report": str(scan_file)},
+        "license": report["license"],
+        "promoted_at": now_iso(),
+        "targets": [],
+    }
+    for operation in operations:
+        target = Path(operation["target"])
+        dest = Path(operation["dest"])
+        backup_path = None
+        if dest.exists():
+            backup_path = home / "backups" / stamp / name
+            backup_path.parent.mkdir(parents=True, exist_ok=True)
+            if backup_path.exists():
+                raise SkillError(f"backup path exists: {backup_path}")
+            shutil.move(str(dest), str(backup_path))
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(store_tree, dest)
+        write_json(
+            dest / ".ajia-promoted.json",
+            {
+                "schema": 1,
+                "id": record["id"],
+                "name": name,
+                "content_hash": record["content_hash"],
+                "promoted_at": now_iso(),
+                "scan": report["verdict"],
+                "license": report["license"]["value"],
+            },
+        )
+        entry["targets"].append(
+            {
+                "target": str(target),
+                "dest": str(dest),
+                "backup": str(backup_path) if backup_path else None,
+            }
+        )
+    lock.setdefault("promotions", {})[record["id"]] = entry
+    write_json(paths(home)["lock"], lock)
+    print(json.dumps({"promoted": record["id"], "name": name, "targets": entry["targets"]}, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_uninstall(home: Path, args: argparse.Namespace) -> int:
+    lock = read_json(paths(home)["lock"], {"schema": 1, "promotions": {}})
+    entry = (lock.get("promotions") or {}).get(args.id)
+    if not entry:
+        raise SkillError(f"not promoted: {args.id}")
+    removed: list[str] = []
+    for target in entry.get("targets", []):
+        dest = Path(target["dest"])
+        marker = read_json(dest / ".ajia-promoted.json", {})
+        if marker.get("id") == entry["id"]:
+            shutil.rmtree(dest)
+            removed.append(str(dest))
+        else:
+            print(f"skip {dest} (not owned or already gone)")
+    lock["promotions"].pop(args.id, None)
+    write_json(paths(home)["lock"], lock)
+    print(json.dumps({"uninstalled": args.id, "removed": removed}, indent=2))
+    return 0
+
+
+def cmd_sandbox(home: Path, args: argparse.Namespace) -> int:
+    result = use_skill(home, args.id, agent="sandbox")
+    base = result["base_dir"]
+    command = args.run or "echo sandbox-ready; ls -la"
+    cmd = [
+        "docker", "run", "--rm", "--network", "none", "--read-only",
+        "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+        "--user", f"{os.getuid()}:{os.getgid()}",
+        "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m",
+        "-v", f"{base}:/skill:ro", "-w", "/skill", args.image,
+        "/bin/sh", "-c", command,
+    ]
+    print(shlex.join(cmd))
+    if args.execute:
+        if not shutil.which("docker"):
+            raise SkillError("docker is not installed")
+        return subprocess.run(cmd, check=False).returncode
+    print("dry run; add --execute to run it")
+    return 0
+
+
+def cmd_learn(home: Path, args: argparse.Namespace) -> int:
+    source = " ".join(args.source)
+    if args.foundry:
+        print("Cross-agent foundry:")
+        print(f"  write {paths(home)['foundry']}/<slug>/SKILL.md")
+        print("  ajia foundry sync")
+        print("  ajia generated")
+        return 0
+    if not args.execute:
+        print("Hermes /learn is an interactive command. It cannot run in -z or chat -q;")
+        print("those modes prune skill_manage.")
+        print("")
+        print("Interactive Hermes:")
+        print("  hermes chat")
+        print(f"  /learn {source}")
+        print("  /exit")
+        print("  ajia source sync hermes")
+        print("")
+        print("Cross-agent foundry:")
+        print(f"  write {paths(home)['foundry']}/<slug>/SKILL.md")
+        print("  ajia foundry sync")
+        return 0
+    try:
+        import pexpect
+    except ImportError as exc:
+        raise SkillError("pexpect is required for --execute") from exc
+    hermes = shutil.which("hermes")
+    if not hermes:
+        raise SkillError("hermes is not installed")
+    usage_path = Path.home() / ".hermes" / "skills" / ".usage.json"
+    try:
+        before = json.loads(usage_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        before = {}
+    start = time.time()
+    found: str | None = None
+    proc = pexpect.spawn(
+        hermes,
+        ["chat"],
+        encoding="utf-8",
+        timeout=5,
+        dimensions=(40, 120),
+        codec_errors="replace",
+    )
+    try:
+        try:
+            proc.expect("ready", timeout=30)
+        except Exception:  # noqa: BLE001
+            time.sleep(5)
+        proc.sendline(f"/learn {source}")
+        deadline = time.time() + max(30, args.timeout)
+        while time.time() < deadline:
+            time.sleep(2)
+            try:
+                proc.read_nonblocking(size=65536, timeout=0.1)
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                now = json.loads(usage_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                now = {}
+            for name, record in now.items():
+                if name not in before and record.get("created_by") in {"learn", "agent"}:
+                    found = name
+                    break
+            if found:
+                break
+            for skill_md in (Path.home() / ".hermes" / "skills").rglob("SKILL.md"):
+                try:
+                    if skill_md.stat().st_mtime > start:
+                        found = skill_md.parent.name
+                        break
+                except OSError:
+                    continue
+            if found:
+                break
+    finally:
+        try:
+            proc.close(force=True)
+        except Exception:  # noqa: BLE001
+            pass
+    if not found:
+        raise SkillError(
+            "Hermes /learn did not produce a skill. Run it interactively, then: "
+            "ajia source sync hermes"
+        )
+    build_catalog(home, quiet=True)
+    records = load_catalog(home, quiet=True)
+    matches = [
+        record
+        for record in records
+        if record.get("source", {}).get("id") == "hermes"
+        and (
+            record.get("name") == found
+            or record.get("id", "").endswith("/" + found)
+        )
+    ]
+    if not matches:
+        raise SkillError(
+            f"{found} was created but is not in the catalog; run: ajia source sync hermes"
+        )
+    record = matches[0]
+    result = {
+        "source": "hermes",
+        "skill": record["id"],
+        "name": record["name"],
+        "generated_by": record.get("generated_by"),
+        "curator_state": record.get("curator_state"),
+        "license": record.get("license"),
+    }
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(f"learned: {record['id']}")
+        print(f"generated_by: {result['generated_by']}  state: {result['curator_state']}")
+        print(f"next: ajia use {record['id']}")
+        print(f"      ajia scan {record['id']}")
+        print(f"      ajia promote {record['id']} --dry-run")
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="ajia", description="Local skill platform.")
+    parser.add_argument("--home", help="Ajia home (default: $AJIA_HOME or ~/.ajia)")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    sub.add_parser("init", help="Create the home directory and default sources.")
+    sub.add_parser("status", help="Show catalog status.")
+    sub.add_parser("doctor", help="Check the local setup.")
+    sub.add_parser("policy", help="Print the 2-line trigger policy.")
+    mcp_parser = sub.add_parser("mcp", help="Run the stdio MCP server.")
+    mcp_parser.add_argument("--host", help="Host id for native-first decisions.")
+
+    source = sub.add_parser("source", help="Manage skill sources.")
+    source_sub = source.add_subparsers(dest="source_command", required=True)
+    source_sub.add_parser("list", help="List sources.")
+    add = source_sub.add_parser("add", help="Add a local or git source.")
+    add.add_argument("id")
+    add.add_argument("target")
+    add.add_argument("--type", choices=["auto", "local", "git"], default="auto")
+    add.add_argument("--ref", default="main")
+    add.add_argument("--license")
+    add.add_argument("--enable", action="store_true")
+    enable = source_sub.add_parser("enable", help="Enable a source.")
+    enable.add_argument("id")
+    disable = source_sub.add_parser("disable", help="Disable a source.")
+    disable.add_argument("id")
+    sync = source_sub.add_parser("sync", help="Fetch sources and rebuild the catalog.")
+    sync.add_argument("ids", nargs="*")
+    sync.add_argument("--refresh", action="store_true")
+
+    catalog = sub.add_parser("catalog", help="Build or inspect the catalog.")
+    catalog_sub = catalog.add_subparsers(dest="catalog_command", required=True)
+    catalog_sub.add_parser("build", help="Rebuild the catalog.")
+    catalog_sub.add_parser("stats", help="Show catalog counts.")
+
+    search = sub.add_parser("search", help="Search the local catalog.")
+    search.add_argument("query")
+    search.add_argument("--limit", type=int, default=5)
+    search.add_argument("--source")
+    search.add_argument("--host")
+    search.add_argument("--cwd")
+    search.add_argument("--json", action="store_true")
+
+    use = sub.add_parser("use", help="Use a skill without installing it.")
+    use.add_argument("id")
+    use.add_argument("--agent")
+    use.add_argument("--host")
+    use.add_argument("--json", action="store_true")
+
+    setup = sub.add_parser("setup", help="Print the MCP registration command.")
+    setup.add_argument("host", choices=["opencode", "pi", "hermes", "codex", "omp", "claude", "generic"])
+
+    route = sub.add_parser("route", help="Route a user message to one skill.")
+    route.add_argument("query")
+    route.add_argument("--host")
+    route.add_argument("--cwd")
+    route.add_argument("--limit", type=int, default=5)
+    route.add_argument("--json", action="store_true")
+    route.add_argument("--explain", action="store_true")
+    route.add_argument("--no-body", action="store_true")
+
+    remote = sub.add_parser("remote", help="Search or install upstream skills.")
+    remote_sub = remote.add_subparsers(dest="remote_command", required=True)
+    remote_search_parser = remote_sub.add_parser("search", help="Search skills.sh.")
+    remote_search_parser.add_argument("query")
+    remote_search_parser.add_argument("--limit", type=int, default=10)
+    remote_search_parser.add_argument("--json", action="store_true")
+    remote_search_parser.add_argument(
+        "--api-url", default="https://skills.sh/api/search"
+    )
+    remote_add_parser = remote_sub.add_parser(
+        "add", help="Add a skills.sh source, sync it, and find a skill."
+    )
+    remote_add_parser.add_argument("source")
+    remote_add_parser.add_argument("--skill", required=True)
+    remote_add_parser.add_argument("--ref", default="main")
+    remote_add_parser.add_argument("--license")
+    remote_add_parser.add_argument("--refresh", action="store_true")
+    remote_add_parser.add_argument("--json", action="store_true")
+
+    remote_install_parser = remote_sub.add_parser(
+        "install", help="Install a skill with npx skills."
+    )
+    remote_install_parser.add_argument("source")
+    remote_install_parser.add_argument("--skill", required=True)
+    remote_install_parser.add_argument("--agent", default="*")
+    remote_install_parser.add_argument("--project", action="store_true")
+    remote_install_parser.add_argument("--yes", action="store_true")
+
+    promote = sub.add_parser("promote", help="Promote a trial into a host skill root.")
+    promote.add_argument("id")
+    promote.add_argument("--dry-run", action="store_true")
+    promote.add_argument("--yes", action="store_true", help="Apply the plan.")
+    promote.add_argument("--force", action="store_true", help="Allow a caution verdict.")
+    promote.add_argument("--builtin", action="store_true", help="Skip external scanners.")
+    promote.add_argument("--allow-unknown-license", action="store_true")
+    promote.add_argument("--name", help="Installed name; defaults to ajia-<skill>.")
+    promote.add_argument("--target", action="append", help="Target skill root; repeatable.")
+    promote.add_argument("--project", help="Copy into a project's .agents and .claude roots.")
+
+    generated = sub.add_parser("generated", help="List generated and foundry candidates.")
+    generated.add_argument("--json", action="store_true")
+
+    profile = sub.add_parser("profile", help="Manage local profiles.")
+    profile_sub = profile.add_subparsers(dest="profile_command", required=True)
+    profile_sub.add_parser("list", help="List profiles.")
+    profile_show = profile_sub.add_parser("show", help="Show a profile.")
+    profile_show.add_argument("name", nargs="?")
+    profile_show.add_argument("--json", action="store_true")
+    profile_use = profile_sub.add_parser("use", help="Set the active profile.")
+    profile_use.add_argument("name")
+
+    foundry = sub.add_parser("foundry", help="Manage the cross-agent skill foundry.")
+    foundry_sub = foundry.add_subparsers(dest="foundry_command", required=True)
+    foundry_sub.add_parser("init", help="Create the foundry directory.")
+    foundry_sync = foundry_sub.add_parser("sync", help="Rebuild the catalog and list foundry skills.")
+    foundry_sync.add_argument("--json", action="store_true")
+    foundry_list = foundry_sub.add_parser("list", help="List foundry skills.")
+    foundry_list.add_argument("--json", action="store_true")
+
+    uninstall = sub.add_parser("uninstall", help="Remove a promoted skill from its targets.")
+    uninstall.add_argument("id")
+
+    native = sub.add_parser("native", help="List native and ajia-owned skills per host.")
+    native.add_argument("--host")
+    native.add_argument("--cwd")
+    native.add_argument("--json", action="store_true")
+
+    rollback = sub.add_parser("rollback", help="Restore a promoted skill from its backup.")
+    rollback.add_argument("id")
+
+    sandbox = sub.add_parser("sandbox", help="Run a skill script in a Docker sandbox.")
+    sandbox.add_argument("id")
+    sandbox.add_argument("--run", help="Shell command to run inside the sandbox.")
+    sandbox.add_argument("--execute", action="store_true", help="Actually run Docker.")
+    sandbox.add_argument("--image", default="debian:stable-slim")
+
+    learn = sub.add_parser("learn", help="Author a Hermes skill or use the cross-agent foundry.")
+    learn.add_argument("source", nargs="+")
+    learn.add_argument("--execute", action="store_true")
+    learn.add_argument("--timeout", type=int, default=300)
+    learn.add_argument("--json", action="store_true")
+    learn.add_argument("--foundry", action="store_true")
+
+    scan = sub.add_parser("scan", help="Run the safety stack on a catalog skill.")
+    scan.add_argument("id")
+    scan.add_argument("--json", action="store_true")
+    scan.add_argument("--builtin", action="store_true", help="Skip external scanners.")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    home = home_path(args.home)
+    ensure_dirs(home)
+    try:
+        if args.command == "init":
+            return cmd_init(home, args)
+        if args.command == "status":
+            return cmd_status(home, args)
+        if args.command == "doctor":
+            return cmd_doctor(home, args)
+        if args.command == "policy":
+            return cmd_policy(home, args)
+        if args.command == "mcp":
+            return mcp_server(home, host=args.host)
+        if args.command == "search":
+            return cmd_search(home, args)
+        if args.command == "use":
+            return cmd_use(home, args)
+        if args.command == "setup":
+            return cmd_setup(home, args)
+        if args.command == "route":
+            return cmd_route(home, args)
+        if args.command == "remote":
+            if args.remote_command == "search":
+                return cmd_remote_search(home, args)
+            if args.remote_command == "add":
+                return cmd_remote_add(home, args)
+            if args.remote_command == "install":
+                return cmd_remote_install(home, args)
+        if args.command == "promote":
+            return cmd_promote(home, args)
+        if args.command == "generated":
+            return cmd_generated(home, args)
+        if args.command == "profile":
+            return cmd_profile(home, args)
+        if args.command == "foundry":
+            return cmd_foundry(home, args)
+        if args.command == "native":
+            return cmd_native(home, args)
+        if args.command == "rollback":
+            return cmd_rollback(home, args)
+        if args.command == "uninstall":
+            return cmd_uninstall(home, args)
+        if args.command == "sandbox":
+            return cmd_sandbox(home, args)
+        if args.command == "learn":
+            return cmd_learn(home, args)
+        if args.command == "scan":
+            return cmd_scan(home, args)
+        if args.command == "catalog":
+            if args.catalog_command == "build":
+                return cmd_catalog_build(home, args)
+            if args.catalog_command == "stats":
+                return cmd_catalog_stats(home, args)
+        if args.command == "source":
+            if args.source_command == "list":
+                return cmd_source_list(home, args)
+            if args.source_command == "add":
+                return cmd_source_add(home, args)
+            if args.source_command == "enable":
+                return cmd_source_toggle(home, args.id, True)
+            if args.source_command == "disable":
+                return cmd_source_toggle(home, args.id, False)
+            if args.source_command == "sync":
+                return cmd_source_sync(home, args)
+    except SkillError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    parser.error("unknown command")
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

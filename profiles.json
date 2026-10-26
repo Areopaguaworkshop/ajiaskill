@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "default": "personal",
+  "profiles": {
+    "personal": {
+      "sources": ["*"],
+      "hosts": ["opencode", "pi", "hermes", "codex", "omp", "claude"],
+      "routing": {
+        "inject": 0.6,
+        "margin": 0.08,
+        "suggest": 0.45,
+        "limit": 5
+      },
+      "safety": {
+        "force_warn": false,
+        "allow_unknown_license": false,
+        "require_trial": true
+      }
+    },
+    "work": {
+      "sources": ["ajia-core", "hermes", "foundry"],
+      "hosts": ["opencode", "pi", "codex"],
+      "routing": {
+        "inject": 0.65,
+        "margin": 0.1,
+        "suggest": 0.5,
+        "limit": 3
+      },
+      "safety": {
+        "force_warn": true,
+        "allow_unknown_license": false,
+        "require_trial": true
+      }
+    }
+  }
+}

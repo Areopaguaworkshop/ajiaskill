@@ -1,0 +1,45 @@
+{
+  "name": "ajiaskill",
+  "version": "0.1.0",
+  "description": "Personal skill manager and platform for coding agents: catalog, MCP, native-first routing, and gated promotion.",
+  "license": "MIT",
+  "bin": {
+    "ajiaskill": "npm/ajia.js",
+    "ajia": "npm/ajia.js",
+    "ajiaskill-mcp": "npm/ajiaskill-mcp.js"
+  },
+  "files": [
+    "bin/ajia",
+    "npm/",
+    "skills/",
+    "hosts.json",
+    "profiles.json",
+    "routing.json",
+    "README.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "python3 -m unittest discover -s tests",
+    "validate": "python3 scripts/validate-skills.py",
+    "pack:check": "npm pack --dry-run"
+  },
+  "keywords": [
+    "skills",
+    "skill-manager",
+    "mcp",
+    "opencode",
+    "codex",
+    "pi",
+    "hermes",
+    "omp",
+    "claude",
+    "coding-agents"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
