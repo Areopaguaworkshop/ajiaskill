@@ -138,7 +138,9 @@ python3 bin/ajia setup omp
 python3 bin/ajia setup claude
 ```
 
-Each command prints the exact registration command and the 2-line policy. The MCP server is registered as `ajiaskill`; its tools are read-only. They are live on OpenCode, Pi, Hermes, Codex, OMP, and Claude. Each registration passes `--host` so search results can mark native skills and `ajia_use` can refuse a duplicate fallback.
+Each command prints the exact registration command and the trigger policy. The MCP server is registered as `ajiaskill`; its tools are read-only. They are live on OpenCode, Pi, Hermes, Codex, OMP, and Claude. Each registration passes `--host` so search results can mark native skills and `ajia_use` can refuse a duplicate fallback.
+
+The server sends a trigger policy on `initialize`: diagrams and visual explainers -> `archify`; one-page HTML answers -> `answer-me-with-html`; browser tasks -> `browser-skill`; app verification -> `create-verification-skill`; frontend design -> `impeccable`; GUI automation -> `cua-driver`; RTK/Rust CLI work -> the `rtk-*` family. The policy is guidance, not injection; the model still decides. Install core skills natively (see `install.sh`) to make them auto-discoverable in the host.
 
 Start a new host session to load `ajia_search` and `ajia_use` if they are not visible yet.
 
@@ -280,6 +282,21 @@ Output and interfaces:
 - `browser-skill` — drive the user's logged-in Chromium browser through `bsk`.
 - `cua-driver` — drive native GUI apps through the `cua-driver` CLI or MCP server.
 - `openshell-policy-advisor` — narrow network-policy proposals when an OpenShell sandbox returns `policy_denied`.
+
+RTK and Rust CLI work:
+
+- `rtk-triage` — cross issue and PR triage with security-gap analysis.
+- `issue-triage` — audit open issues, find duplicates, cross-reference PRs, assess risk.
+- `pr-triage` — audit open PRs, review selected ones, draft comments.
+- `pr-review` — batch-review PRs in increasing size order, with explicit merge approval.
+- `security-guardian` — command injection, shell escaping, and hook security review.
+- `performance` — startup time, memory, and token-savings analysis.
+- `code-simplifier` — idiomatic Rust simplification without behavior change.
+- `design-patterns` — Rust patterns for new modules and refactors.
+- `rtk-tdd` — Red-Green-Refactor with Rust testing patterns.
+- `tdd-rust` — TDD for RTK filter development with fixtures and snapshots.
+- `ship` — build, version bump, changelog, tag, and push.
+- `repo-recap` — PR, issue, and release recap for sharing.
 
 The bundled third-party skills keep their upstream notices in `THIRD_PARTY_NOTICES.md`. Some need an external tool: `archify` and `answer-me-with-html` run bundled Node scripts, `impeccable` fetches its engine on first run, `cua-driver` needs the Cua driver, `browser-skill` needs `bsk` and its browser extension, and `openshell-policy-advisor` runs inside an OpenShell sandbox.
 

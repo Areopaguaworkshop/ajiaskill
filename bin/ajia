@@ -26,9 +26,20 @@ from typing import Any
 VERSION = "0.1.0"
 REPO_ROOT = Path(__file__).resolve().parent.parent
 POLICY = (
-    "When no installed or native skill clearly matches the task, call `ajia_search` once "
-    "before improvising. If a result fits, call `ajia_use` and follow the returned `SKILL.md` "
-    "in place; do not copy, install, or promote anything unless the user explicitly asks."
+    "Prefer an installed native skill when it matches. Core triggers: "
+    "architecture/workflow/sequence/ERD/diagram or a visual explainer -> archify; "
+    "one-page HTML answer -> answer-me-with-html; browser/login/form -> browser-skill; "
+    "app verification/evidence -> create-verification-skill; "
+    "frontend/UI/design -> impeccable; GUI/desktop automation -> cua-driver; "
+    "OpenShell policy_denied -> openshell-policy-advisor; "
+    "terse mode -> caveman; smallest complete change -> ponytail; "
+    "ADHD-shaped output -> i-have-adhd; "
+    "RTK/Rust CLI work -> rtk-triage, pr-review, pr-triage, security-guardian, "
+    "performance, code-simplifier, design-patterns, rtk-tdd, tdd-rust, ship, "
+    "issue-triage, repo-recap. "
+    "When no native skill clearly matches, call `ajia_search` once before improvising. "
+    "If a result fits, call `ajia_use` and follow the returned `SKILL.md` in place; "
+    "do not copy, install, or promote anything unless the user explicitly asks."
 )
 SKIP_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv", ".archive", ".hub"}
 SKIP_FILES = {".DS_Store"}
