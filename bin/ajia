@@ -712,6 +712,146 @@ def skill_body(record: dict[str, Any], max_chars: int = 16000) -> str:
         return ""
 
 
+EMBEDDING_CACHE_SCHEMA = 1
+
+
+def embedding_config() -> dict[str, Any] | None:
+    url = os.environ.get("AJIA_EMBED_URL", "").strip()
+    if not url:
+        return None
+    try:
+        safe_http_url(url)
+        timeout = float(os.environ.get("AJIA_EMBED_TIMEOUT", "8"))
+    except (SkillError, ValueError):
+        return None
+    return {
+        "url": url,
+        "model": os.environ.get("AJIA_EMBED_MODEL", "text-embedding-3-small").strip()
+        or "text-embedding-3-small",
+        "key": os.environ.get("AJIA_EMBED_API_KEY", ""),
+        "timeout": max(0.2, timeout),
+    }
+
+
+def embed_texts(texts: list[str]) -> list[list[float]] | None:
+    cfg = embedding_config()
+    if not cfg or not texts:
+        return None
+    payload = json.dumps({"model": cfg["model"], "input": texts}).encode("utf-8")
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": f"ajia/{VERSION}",
+    }
+    if cfg["key"]:
+        headers["Authorization"] = f"Bearer {cfg['key']}"
+    try:
+        request = Request(
+            cfg["url"], data=payload, headers=headers, method="POST"
+        )
+        # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
+        with urlopen(request, timeout=cfg["timeout"]) as response:
+            data = json.load(response)
+    except Exception:
+        return None
+    items = data.get("data") if isinstance(data, dict) else None
+    if not isinstance(items, list) or len(items) != len(texts):
+        return None
+    vectors: list[list[float]] = []
+    for item in items:
+        embedding = item.get("embedding") if isinstance(item, dict) else None
+        if not isinstance(embedding, list) or not embedding:
+            return None
+        try:
+            vectors.append([float(value) for value in embedding])
+        except (TypeError, ValueError):
+            return None
+    return vectors
+
+
+def cosine_similarity(left: list[float], right: list[float]) -> float:
+    if not left or not right or len(left) != len(right):
+        return 0.0
+    dot = sum(a * b for a, b in zip(left, right))
+    left_norm = math.sqrt(sum(value * value for value in left))
+    right_norm = math.sqrt(sum(value * value for value in right))
+    if not left_norm or not right_norm:
+        return 0.0
+    return dot / (left_norm * right_norm)
+
+
+def embedding_text(record: dict[str, Any]) -> str:
+    return (
+        f"{record.get('name', '')}\n"
+        f"{record.get('description', '')}\n"
+        f"{skill_body(record, 3000)}"
+    )
+
+
+def load_embedding_cache(home: Path, model: str) -> dict[str, list[float]]:
+    path = paths(home)["catalog"] / "embeddings.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if (
+        not isinstance(data, dict)
+        or data.get("schema") != EMBEDDING_CACHE_SCHEMA
+        or data.get("model") != model
+    ):
+        return {}
+    vectors = data.get("vectors")
+    return vectors if isinstance(vectors, dict) else {}
+
+
+def save_embedding_cache(
+    home: Path, model: str, vectors: dict[str, list[float]]
+) -> None:
+    path = paths(home)["catalog"] / "embeddings.json"
+    try:
+        write_json(
+            path,
+            {
+                "schema": EMBEDDING_CACHE_SCHEMA,
+                "model": model,
+                "updated_at": now_iso(),
+                "vectors": vectors,
+            },
+        )
+    except OSError:
+        pass
+
+
+def dense_scores(
+    home: Path, records: list[dict[str, Any]], query: str
+) -> list[float] | None:
+    cfg = embedding_config()
+    if not cfg or not records:
+        return None
+    cache = load_embedding_cache(home, cfg["model"])
+    missing = [
+        record
+        for record in records
+        if str(record.get("content_hash", "")) not in cache
+    ]
+    if missing:
+        for start in range(0, len(missing), 32):
+            batch = missing[start : start + 32]
+            vectors = embed_texts([embedding_text(record) for record in batch])
+            if vectors is None:
+                return None
+            for record, vector in zip(batch, vectors):
+                cache[str(record.get("content_hash", ""))] = vector
+        save_embedding_cache(home, cfg["model"], cache)
+    query_vectors = embed_texts([query])
+    if not query_vectors:
+        return None
+    query_vector = query_vectors[0]
+    return [
+        cosine_similarity(query_vector, cache.get(str(record.get("content_hash", "")), []))
+        for record in records
+    ]
+
+
 def normalized_body_scores(
     query_tokens: list[str], records: list[dict[str, Any]]
 ) -> list[float]:
@@ -741,6 +881,17 @@ def search_catalog(
     if not q:
         return []
     tokens = [t for t in re.split(r"[^a-z0-9\u4e00-\u9fff]+", q) if t]
+    dense = dense_scores(home, records, query)
+    dense_rank_map: dict[int, int] = {}
+    dense_top: set[int] = set()
+    if dense is not None:
+        dense_order = sorted(range(len(records)), key=lambda index: -dense[index])
+        dense_rank_map = {
+            id(records[index]): rank for rank, index in enumerate(dense_order)
+        }
+        dense_top = {
+            id(records[index]) for index in dense_order[: max(12, limit * 4)]
+        }
     scored: list[tuple[int, dict[str, Any], str]] = []
     allowed_sources = set(profile_config(home).get("sources", ["*"]))
     for record in records:
@@ -775,10 +926,13 @@ def search_catalog(
                 reasons.append(f"desc:{token}")
             if token in record_id:
                 score += 2
-        if score == 0:
+        if score == 0 and id(record) not in dense_top:
             continue
         score += min(int(record.get("use_count", 0) or 0), 10)
-        scored.append((score, record, ", ".join(dict.fromkeys(reasons)) or "match"))
+        reason = ", ".join(dict.fromkeys(reasons))
+        if not reason:
+            reason = "dense" if id(record) in dense_top else "match"
+        scored.append((score, record, reason))
     scored.sort(key=lambda item: (-item[0], item[1].get("name", "")))
 
     # Body-aware rerank: fuse the lexical order with a full-body BM25 order
@@ -791,7 +945,8 @@ def search_catalog(
         body_values = normalized_body_scores(
             tokenize(query), [record for _, record, _ in pool]
         )
-        if max(body_values, default=0.0) > 0:
+        has_body = max(body_values, default=0.0) > 0
+        if has_body or dense is not None:
             lexical_rank = {
                 id(record): index for index, (_, record, _) in enumerate(pool)
             }
@@ -801,20 +956,31 @@ def search_catalog(
             body_rank = {
                 id(pool[index][1]): rank for rank, index in enumerate(body_order)
             }
-            body_by_id = {
-                id(pool[index][1]): body_values[index] for index in range(len(pool))
-            }
-            fused: list[tuple[float, float, dict[str, Any], str, float]] = []
+            dense_by_id = (
+                {id(record): dense[index] for index, record in enumerate(records)}
+                if dense is not None
+                else {}
+            )
+            fused: list[
+                tuple[float, float, dict[str, Any], str, list[str]]
+            ] = []
             for score, record, reason in pool:
-                rrf = (
-                    1.0 / (60 + lexical_rank[id(record)] + 1)
-                    + 0.8 / (60 + body_rank[id(record)] + 1)
-                )
-                fused.append((rrf, score, record, reason, body_by_id[id(record)]))
+                rrf = 1.0 / (60 + lexical_rank[id(record)] + 1)
+                tags: list[str] = []
+                body_value = body_values[lexical_rank[id(record)]]
+                if has_body and body_value > 0:
+                    rrf += 0.8 / (60 + body_rank[id(record)] + 1)
+                    tags.append("body")
+                dense_rank = dense_rank_map.get(id(record))
+                dense_value = dense_by_id.get(id(record), 0.0)
+                if dense_rank is not None and dense_value > 0:
+                    rrf += 1.0 / (60 + dense_rank + 1)
+                    tags.append("dense")
+                fused.append((rrf, score, record, reason, tags))
             fused.sort(key=lambda item: (-item[0], -item[1], item[2].get("name", "")))
             scored = [
-                (score, record, reason + (", body" if body > 0 else ""))
-                for _, score, record, reason, body in fused
+                (score, record, reason + (", " + ", ".join(tags) if tags else ""))
+                for _, score, record, reason, tags in fused
             ] + rest
     results: list[dict[str, Any]] = []
     for score, record, reason in scored[: max(1, limit)]:
@@ -1060,6 +1226,13 @@ def route_skill(
         result["reason"] = "empty catalog"
         return result
 
+    dense_raw = dense_scores(home, records, query)
+    dense_values: dict[int, float] = {}
+    if dense_raw is not None:
+        dense_values = {
+            id(record): score for record, score in zip(records, dense_raw)
+        }
+
     candidates: list[dict[str, Any]] = []
     q_lower = query.lower()
     context_dir = Path(cwd).expanduser().resolve() if cwd else Path.cwd()
@@ -1158,6 +1331,7 @@ def route_skill(
                 "rule": rule,
                 "ctx": ctx,
                 "priority": priority,
+                "dense": dense_values.get(id(record), 0.0),
                 "reasons": reasons,
                 "doc": doc_parts,
             }
@@ -1173,6 +1347,10 @@ def route_skill(
     low = min(bm_scores) if bm_scores else 0.0
     for item, bm in zip(candidates, bm_scores):
         lex = (bm - low) / (high - low) if high > low else 0.0
+        dense = float(item.get("dense", 0.0))
+        if dense > 0:
+            lex = max(lex, dense)
+            item["reasons"].append("dense")
         item["lex"] = lex
         item["score"] = (
             0.55 * lex + 0.25 * item["rule"] + 0.10 * item["ctx"] + 0.10 * item["priority"]
@@ -1225,6 +1403,7 @@ def route_skill(
             "score": round(item["score"], 3),
             "components": {
                 "lex": round(item["lex"], 3),
+                "dense": round(item.get("dense", 0.0), 3),
                 "rule": round(item["rule"], 3),
                 "ctx": round(item["ctx"], 3),
                 "priority": round(item["priority"], 3),

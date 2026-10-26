@@ -94,6 +94,19 @@ The router injects at 0.60 or more with a 0.08 margin, or at a 0.90 rule hit. It
 
 Search and routing also read the top candidates' `SKILL.md` bodies and add a body-aware BM25 signal. Search fuses lexical and body ranks with RRF. The router adds a bounded body boost to the lexical component.
 
+### Optional embeddings
+
+Set an OpenAI-compatible embeddings endpoint to add a dense retrieval arm:
+
+```bash
+export AJIA_EMBED_URL="http://127.0.0.1:11434/v1/embeddings"
+export AJIA_EMBED_MODEL="nomic-embed-text"
+# export AJIA_EMBED_API_KEY="..."
+# export AJIA_EMBED_TIMEOUT="8"
+```
+
+Skill texts are cached by content hash in `~/.ajia/catalog/embeddings.json`. Search fuses lexical, body, and dense ranks with RRF; the router adds a dense signal when it is available. If the endpoint is unset, unreachable, or returns invalid data, both fall back to lexical + body. The endpoint receives skill names, descriptions, and a body excerpt, so use a local model if that text must not leave the machine. `http` is allowed only on loopback; use `https` elsewhere.
+
 The router returns `native` when the host already has the skill, `inject` when it can use a source or core body, `suggest` when ambiguous, and `none` when no match is safe. The primary automatic path is still MCP. `ajia-router` is the manual fallback.
 
 ## Remote backends

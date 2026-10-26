@@ -126,8 +126,14 @@ class AjiaTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.tmp.cleanup()
 
-    def run_cli(self, *args: str) -> subprocess.CompletedProcess[str]:
+    def run_cli(
+        self,
+        *args: str,
+        env_overrides: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
         env = dict(os.environ, AJIA_HOME=str(self.home))
+        if env_overrides:
+            env.update(env_overrides)
         return subprocess.run(
             [sys.executable, str(BIN), *args],
             capture_output=True,
@@ -144,6 +150,22 @@ class AjiaTest(unittest.TestCase):
         results = json.loads(found.stdout)
         self.assertEqual(results[0]["name"], "alpha")
         self.assertIn("fixture", results[0]["id"])
+
+    def test_search_falls_back_when_embeddings_fail(self) -> None:
+        self.run_cli("catalog", "build")
+        found = self.run_cli(
+            "search",
+            "ui",
+            "--json",
+            env_overrides={
+                "AJIA_EMBED_URL": "http://127.0.0.1:9/v1/embeddings",
+                "AJIA_EMBED_MODEL": "test",
+                "AJIA_EMBED_TIMEOUT": "0.2",
+            },
+        )
+        self.assertEqual(found.returncode, 0, found.stderr)
+        results = json.loads(found.stdout)
+        self.assertEqual(results[0]["name"], "alpha")
 
     def test_use_does_not_install(self) -> None:
         self.run_cli("catalog", "build")
