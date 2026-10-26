@@ -77,6 +77,7 @@ files next to its `SKILL.md`.
 - License: Apache-2.0
 - Copyright: pbakaus and contributors
 - Notice: `skills/impeccable/NOTICE`
+- Local addition: `reference/pdf-export.md`, `scripts/pdf-export.sh`, and the PDF section in `SKILL.md` are ajiaskill additions, not upstream.
 
 ## rtk-ai — `rtk-ai/rtk`
 

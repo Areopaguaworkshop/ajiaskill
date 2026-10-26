@@ -278,7 +278,7 @@ Output and interfaces:
 
 - `archify` — validated architecture, flow, sequence, ERD, and timeline diagrams as standalone HTML; export images or print to PDF.
 - `answer-me-with-html` — one-page visual HTML explainer from a short Markdown draft.
-- `impeccable` — frontend design, redesign, audit, and polish.
+- `impeccable` — frontend design, redesign, audit, polish, and print/PDF export.
 - `browser-skill` — drive the user's logged-in Chromium browser through `bsk`.
 - `cua-driver` — drive native GUI apps through the `cua-driver` CLI or MCP server.
 - `openshell-policy-advisor` — narrow network-policy proposals when an OpenShell sandbox returns `policy_denied`.
