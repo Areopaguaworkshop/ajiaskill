@@ -1,6 +1,6 @@
 ---
 name: security-guardian
-description: CLI security expert for RTK - command injection, shell escaping, hook security
+description: Security review for the RTK CLI: command injection, shell escaping, hook security, and malicious input. Use before a release or after shell or hook changes.
 license: Apache-2.0
 ---
 # Security Guardian

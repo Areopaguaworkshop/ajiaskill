@@ -1,6 +1,6 @@
 ---
 name: rtk-triage
-description: Triage complet RTK : exécute issue-triage + pr-triage en parallèle, puis croise les données pour détecter doubles couvertures, trous sécurité, P0 sans PR, et conflits internes. Sauvegarde dans claudedocs/RTK-YYYY-MM-DD.md. Args: "en"/"fr" pour la langue (défaut: fr), "save" pour forcer la sauvegarde.
+description: Run RTK issue and PR triage together: find duplicates, security gaps, P0s without PRs, and internal conflicts. Save to claudedocs/RTK-YYYY-MM-DD.md. Args: en/fr, save.
 license: Apache-2.0
 ---
 

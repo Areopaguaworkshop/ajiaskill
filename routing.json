@@ -1161,6 +1161,620 @@
         "max_injections": 1,
         "always_apply": false
       }
+    },
+    "ajia-core/pr-review": {
+      "capabilities": [
+        "review.code",
+        "review.pr"
+      ],
+      "triggers": {
+        "phrases": [
+          "review the rtk pull request",
+          "batch review these rtk prs",
+          "review pr 42 in the rtk repo",
+          "review pr for rtk"
+        ],
+        "keywords": [
+          "rtk",
+          "pr",
+          "pull request",
+          "review",
+          "diff",
+          "merge"
+        ],
+        "regex": []
+      },
+      "examples": {
+        "positive": [
+          "review the RTK pull request",
+          "batch review these RTK PRs"
+        ],
+        "negative": [
+          "review my resume",
+          "performance review"
+        ]
+      },
+      "negative_triggers": [
+        {
+          "pattern": "resume|performance review|literature review",
+          "severity": "veto",
+          "unless": "code|pr|diff|merge"
+        }
+      ],
+      "file_globs": [
+        "**/Cargo.toml"
+      ],
+      "host_fit": [
+        "*"
+      ],
+      "requires": {
+        "tools": []
+      },
+      "priority": 88,
+      "routing": {
+        "enabled": true,
+        "max_injections": 1,
+        "always_apply": false
+      }
+    },
+    "ajia-core/pr-triage": {
+      "capabilities": [
+        "review.triage",
+        "review.pr"
+      ],
+      "triggers": {
+        "phrases": [
+          "triage the open rtk prs",
+          "audit open pull requests",
+          "pr triage for rtk"
+        ],
+        "keywords": [
+          "triage",
+          "pr",
+          "pull request",
+          "audit",
+          "rtk"
+        ],
+        "regex": []
+      },
+      "examples": {
+        "positive": [
+          "triage the open RTK PRs",
+          "audit open pull requests"
+        ],
+        "negative": [
+          "triage the open issues"
+        ]
+      },
+      "negative_triggers": [
+        {
+          "pattern": "open issues|issue triage",
+          "severity": "downrank",
+          "unless": "pr|pull request"
+        }
+      ],
+      "file_globs": [],
+      "host_fit": [
+        "*"
+      ],
+      "requires": {
+        "tools": []
+      },
+      "priority": 80,
+      "routing": {
+        "enabled": true,
+        "max_injections": 1,
+        "always_apply": false
+      }
+    },
+    "ajia-core/rtk-triage": {
+      "capabilities": [
+        "review.triage",
+        "workflow.triage"
+      ],
+      "triggers": {
+        "phrases": [
+          "run a full rtk triage",
+          "triage rtk issues and prs together",
+          "rtk triage"
+        ],
+        "keywords": [
+          "rtk",
+          "triage",
+          "issues",
+          "prs",
+          "security",
+          "duplicates"
+        ],
+        "regex": []
+      },
+      "examples": {
+        "positive": [
+          "run a full RTK triage",
+          "triage RTK issues and PRs together"
+        ],
+        "negative": [
+          "triage the open issues"
+        ]
+      },
+      "negative_triggers": [
+        {
+          "pattern": "open issues$",
+          "severity": "downrank"
+        }
+      ],
+      "file_globs": [],
+      "host_fit": [
+        "*"
+      ],
+      "requires": {
+        "tools": []
+      },
+      "priority": 82,
+      "routing": {
+        "enabled": true,
+        "max_injections": 1,
+        "always_apply": false
+      }
+    },
+    "ajia-core/security-guardian": {
+      "capabilities": [
+        "security.review",
+        "security.audit"
+      ],
+      "triggers": {
+        "phrases": [
+          "run a security review on rtk",
+          "check command injection",
+          "review shell escaping",
+          "security review for rtk"
+        ],
+        "keywords": [
+          "security",
+          "injection",
+          "shell",
+          "escaping",
+          "hook",
+          "rtk",
+          "vulnerability"
+        ],
+        "regex": []
+      },
+      "examples": {
+        "positive": [
+          "run a security review on RTK",
+          "check command injection in this CLI"
+        ],
+        "negative": [
+          "check the weather",
+          "security deposit"
+        ]
+      },
+      "negative_triggers": [
+        {
+          "pattern": "weather|deposit|insurance",
+          "severity": "veto"
+        }
+      ],
+      "file_globs": [
+        "**/*.rs"
+      ],
+      "host_fit": [
+        "*"
+      ],
+      "requires": {
+        "tools": []
+      },
+      "priority": 82,
+      "routing": {
+        "enabled": true,
+        "max_injections": 1,
+        "always_apply": false
+      }
+    },
+    "ajia-core/code-simplifier": {
+      "capabilities": [
+        "code.simplify",
+        "code.refactor"
+      ],
+      "triggers": {
+        "phrases": [
+          "simplify this rust code",
+          "this code is over-engineered",
+          "make this rust idiomatic"
+        ],
+        "keywords": [
+          "simplify",
+          "rust",
+          "over-engineered",
+          "verbose",
+          "refactor",
+          "idiomatic"
+        ],
+        "regex": []
+      },
+      "examples": {
+        "positive": [
+          "simplify this Rust code",
+          "this code is over-engineered"
+        ],
+        "negative": [
+          "simplify the explanation"
+        ]
+      },
+      "negative_triggers": [
+        {
+          "pattern": "explain|explanation|summary",
+          "severity": "downrank",
+          "unless": "code|rust"
+        }
+      ],
+      "file_globs": [
+        "**/*.rs"
+      ],
+      "host_fit": [
+        "*"
+      ],
+      "requires": {
+        "tools": []
+      },
+      "priority": 75,
+      "routing": {
+        "enabled": true,
+        "max_injections": 1,
+        "always_apply": false
+      }
+    },
+    "ajia-core/performance": {
+      "capabilities": [
+        "performance.review",
+        "performance.benchmark"
+      ],
+      "triggers": {
+        "phrases": [
+          "check rtk startup time",
+          "measure memory usage and token savings",
+          "performance regression"
+        ],
+        "keywords": [
+          "performance",
+          "startup",
+          "memory",
+          "tokens",
+          "benchmark",
+          "latency"
+        ],
+        "regex": []
+      },
+      "examples": {
+        "positive": [
+          "check RTK startup time",
+          "measure memory usage and token savings"
+        ],
+        "negative": [
+          "performance review at work"
+        ]
+      },
+      "negative_triggers": [
+        {
+          "pattern": "performance review|annual review",
+          "severity": "veto",
+          "unless": "code|startup|memory|token"
+        }
+      ],
+      "file_globs": [
+        "**/*.rs"
+      ],
+      "host_fit": [
+        "*"
+      ],
+      "requires": {
+        "tools": []
+      },
+      "priority": 72,
+      "routing": {
+        "enabled": true,
+        "max_injections": 1,
+        "always_apply": false
+      }
+    },
+    "ajia-core/design-patterns": {
+      "capabilities": [
+        "code.design",
+        "code.pattern"
+      ],
+      "triggers": {
+        "phrases": [
+          "which rust design pattern fits this module",
+          "refactor to a pattern",
+          "newtype or builder"
+        ],
+        "keywords": [
+          "design pattern",
+          "rust",
+          "module",
+          "builder",
+          "newtype",
+          "raii"
+        ],
+        "regex": []
+      },
+      "examples": {
+        "positive": [
+          "which Rust design pattern fits this module"
+        ],
+        "negative": [
+          "design a database schema"
+        ]
+      },
+      "negative_triggers": [
+        {
+          "pattern": "database schema|sql schema|ui design",
+          "severity": "veto"
+        }
+      ],
+      "file_globs": [
+        "**/*.rs"
+      ],
+      "host_fit": [
+        "*"
+      ],
+      "requires": {
+        "tools": []
+      },
+      "priority": 70,
+      "routing": {
+        "enabled": true,
+        "max_injections": 1,
+        "always_apply": false
+      }
+    },
+    "ajia-core/rtk-tdd": {
+      "capabilities": [
+        "test.tdd",
+        "code.test"
+      ],
+      "triggers": {
+        "phrases": [
+          "use tdd for this rust change",
+          "red green refactor for rtk",
+          "tdd this change"
+        ],
+        "keywords": [
+          "tdd",
+          "rust",
+          "red-green-refactor",
+          "test",
+          "testing"
+        ],
+        "regex": []
+      },
+      "examples": {
+        "positive": [
+          "use TDD for this Rust change"
+        ],
+        "negative": [
+          "tdd stands for what"
+        ]
+      },
+      "negative_triggers": [
+        {
+          "pattern": "what does tdd mean|definition of tdd",
+          "severity": "downrank"
+        }
+      ],
+      "file_globs": [],
+      "host_fit": [
+        "*"
+      ],
+      "requires": {
+        "tools": []
+      },
+      "priority": 72,
+      "routing": {
+        "enabled": true,
+        "max_injections": 1,
+        "always_apply": false
+      }
+    },
+    "ajia-core/tdd-rust": {
+      "capabilities": [
+        "test.tdd",
+        "test.fixture"
+      ],
+      "triggers": {
+        "phrases": [
+          "write tests first for this rtk filter",
+          "add a fixture test",
+          "snapshot test for this filter"
+        ],
+        "keywords": [
+          "tdd",
+          "tests",
+          "fixture",
+          "snapshot",
+          "insta",
+          "rust"
+        ],
+        "regex": []
+      },
+      "examples": {
+        "positive": [
+          "write tests first for this RTK filter"
+        ],
+        "negative": [
+          "write a test plan document"
+        ]
+      },
+      "negative_triggers": [
+        {
+          "pattern": "test plan document|qa plan",
+          "severity": "downrank"
+        }
+      ],
+      "file_globs": [],
+      "host_fit": [
+        "*"
+      ],
+      "requires": {
+        "tools": []
+      },
+      "priority": 70,
+      "routing": {
+        "enabled": true,
+        "max_injections": 1,
+        "always_apply": false
+      }
+    },
+    "ajia-core/issue-triage": {
+      "capabilities": [
+        "issue.triage",
+        "review.triage"
+      ],
+      "triggers": {
+        "phrases": [
+          "triage the open issues",
+          "audit open issues",
+          "find duplicate issues"
+        ],
+        "keywords": [
+          "triage",
+          "issues",
+          "duplicates",
+          "github",
+          "risk"
+        ],
+        "regex": []
+      },
+      "examples": {
+        "positive": [
+          "triage the open issues",
+          "audit open issues"
+        ],
+        "negative": [
+          "triage the open PRs"
+        ]
+      },
+      "negative_triggers": [
+        {
+          "pattern": "open prs|pull request",
+          "severity": "downrank",
+          "unless": "issue"
+        }
+      ],
+      "file_globs": [],
+      "host_fit": [
+        "*"
+      ],
+      "requires": {
+        "tools": []
+      },
+      "priority": 70,
+      "routing": {
+        "enabled": true,
+        "max_injections": 1,
+        "always_apply": false
+      }
+    },
+    "ajia-core/repo-recap": {
+      "capabilities": [
+        "repo.summary",
+        "report.recap"
+      ],
+      "triggers": {
+        "phrases": [
+          "make a repo recap for the team",
+          "recap prs issues and releases",
+          "release recap"
+        ],
+        "keywords": [
+          "recap",
+          "summary",
+          "prs",
+          "issues",
+          "releases",
+          "team"
+        ],
+        "regex": []
+      },
+      "examples": {
+        "positive": [
+          "make a repo recap for the team"
+        ],
+        "negative": [
+          "recap this meeting"
+        ]
+      },
+      "negative_triggers": [
+        {
+          "pattern": "meeting|movie|book",
+          "severity": "veto"
+        }
+      ],
+      "file_globs": [],
+      "host_fit": [
+        "*"
+      ],
+      "requires": {
+        "tools": []
+      },
+      "priority": 60,
+      "routing": {
+        "enabled": true,
+        "max_injections": 1,
+        "always_apply": false
+      }
+    },
+    "ajia-core/ship": {
+      "capabilities": [
+        "release.ship",
+        "release.version"
+      ],
+      "triggers": {
+        "phrases": [
+          "ship a new rtk release",
+          "bump the version and tag the release",
+          "release rtk"
+        ],
+        "keywords": [
+          "ship",
+          "release",
+          "version",
+          "tag",
+          "changelog",
+          "push"
+        ],
+        "regex": []
+      },
+      "examples": {
+        "positive": [
+          "ship a new RTK release",
+          "bump the version and tag the release"
+        ],
+        "negative": [
+          "ship it to the customer"
+        ]
+      },
+      "negative_triggers": [
+        {
+          "pattern": "customer|email|package delivery",
+          "severity": "downrank",
+          "unless": "release|version|tag"
+        }
+      ],
+      "file_globs": [],
+      "host_fit": [
+        "*"
+      ],
+      "requires": {
+        "tools": []
+      },
+      "priority": 70,
+      "routing": {
+        "enabled": true,
+        "max_injections": 1,
+        "always_apply": false
+      }
     }
   },
   "global_negative_triggers": [

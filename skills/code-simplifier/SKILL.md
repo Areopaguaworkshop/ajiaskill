@@ -1,6 +1,6 @@
 ---
 name: code-simplifier
-description: Review RTK Rust code for idiomatic simplification. Detects over-engineering, unnecessary allocations, verbose patterns. Applies Rust idioms without changing behavior.
+description: Review RTK Rust code for idiomatic simplification. Find over-engineering, unnecessary allocations, and verbose patterns; apply Rust idioms without changing behavior. Use when code is too complex or before a refactor.
 license: Apache-2.0
 ---
 

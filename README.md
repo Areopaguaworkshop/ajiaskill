@@ -7,7 +7,7 @@ Status: **Phase 3b: foundry, profiles, and Hermes-generated metadata.** Catalog,
 ## What it does
 
 - **Catalog:** indexes `SKILL.md` files from local and git sources.
-- **Search:** finds a skill by name, description, and path.
+- **Search:** ranks by name, description, path, and use count, then reranks the top candidates with a full-body BM25 pass and RRF. Duplicate names keep the core copy.
 - **Use:** copies the exact bytes to a read-only store and returns the full `SKILL.md` to the agent. Use it in place; copying it into a host skill directory is installation.
 - **MCP (default):** the `ajiaskill` server exposes `ajia_search` and `ajia_use` as tools. The agent calls them when no native or core skill fits.
 - **Router (optional):** `ajia route` maps a message to one skill with rules and metadata. `ajia-router` is the fallback skill. Host hooks are reference-only.
@@ -91,6 +91,8 @@ The score is:
 ```
 
 The router injects at 0.60 or more with a 0.08 margin, or at a 0.90 rule hit. It suggests between 0.45 and 0.60. It does nothing below 0.45. It logs decisions to `~/.ajia/routing.jsonl`.
+
+Search and routing also read the top candidates' `SKILL.md` bodies and add a body-aware BM25 signal. Search fuses lexical and body ranks with RRF. The router adds a bounded body boost to the lexical component.
 
 The router returns `native` when the host already has the skill, `inject` when it can use a source or core body, `suggest` when ambiguous, and `none` when no match is safe. The primary automatic path is still MCP. `ajia-router` is the manual fallback.
 
@@ -313,6 +315,7 @@ routing.json             # routing metadata for core and common skills
 adapters/                # reference OpenCode, Pi, and OMP adapters
 skills/                  # core skills
 scripts/validate-skills.py
+scripts/eval-routing.py
 scripts/test_mcp_hosts.py
 tests/test_ajia.py
 install.sh
@@ -323,6 +326,7 @@ install.sh
 ```bash
 python3 -m unittest discover -s tests -v
 python3 scripts/validate-skills.py
+python3 scripts/eval-routing.py --verbose
 scripts/test_mcp_hosts.py
 ./install.sh --check
 ```

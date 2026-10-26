@@ -1,6 +1,6 @@
 ---
 name: rtk-tdd
-description: Enforces TDD (Red-Green-Refactor) for Rust development. Auto-triggers on implementation, testing, refactoring, and bug fixing tasks. Provides Rust-idiomatic testing patterns with anyhow/thiserror, cfg(test), and Arrange-Act-Assert workflow.
+description: Enforce TDD (Red-Green-Refactor) for Rust changes. Use for implementation, testing, refactoring, or bug fixing; covers anyhow/thiserror, cfg(test), and Arrange-Act-Assert.
 license: Apache-2.0
 ---
 

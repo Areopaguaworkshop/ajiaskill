@@ -23,7 +23,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-VERSION = "0.1.0"
+VERSION = "0.1.3"
 REPO_ROOT = Path(__file__).resolve().parent.parent
 POLICY = (
     "Prefer an installed native skill when it matches. Core triggers: "
@@ -674,6 +674,59 @@ def load_catalog(home: Path, quiet: bool = False) -> list[dict[str, Any]]:
     return records
 
 
+SOURCE_PREFERENCE = {
+    "ajia-core": 0,
+    "foundry": 1,
+    "agents": 2,
+    "hermes": 3,
+}
+
+
+def record_rank(record: dict[str, Any]) -> tuple[int, int, str]:
+    source_id = str(record.get("source", {}).get("id", ""))
+    return (
+        SOURCE_PREFERENCE.get(source_id, 9),
+        -int(record.get("use_count", 0) or 0),
+        str(record.get("id", "")),
+    )
+
+
+def dedupe_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep one record per skill name, preferring core over mirrors."""
+    chosen: dict[str, dict[str, Any]] = {}
+    for record in records:
+        name = str(record.get("name", ""))
+        if not name:
+            continue
+        current = chosen.get(name)
+        if current is None or record_rank(record) < record_rank(current):
+            chosen[name] = record
+    return sorted(chosen.values(), key=lambda item: str(item.get("id", "")))
+
+
+def skill_body(record: dict[str, Any], max_chars: int = 16000) -> str:
+    path = Path(str(record.get("source_path", ""))) / "SKILL.md"
+    try:
+        return path.read_text(encoding="utf-8")[:max_chars]
+    except OSError:
+        return ""
+
+
+def normalized_body_scores(
+    query_tokens: list[str], records: list[dict[str, Any]]
+) -> list[float]:
+    if not records:
+        return []
+    scores = bm25(query_tokens, [tokenize(skill_body(record)) for record in records])
+    if not scores:
+        return [0.0] * len(records)
+    high = max(scores)
+    low = min(scores)
+    if high <= low:
+        return [0.0] * len(records)
+    return [(score - low) / (high - low) for score in scores]
+
+
 def search_catalog(
     home: Path,
     query: str,
@@ -683,7 +736,7 @@ def search_catalog(
     host: str | None = None,
     cwd: str | None = None,
 ) -> list[dict[str, Any]]:
-    records = load_catalog(home, quiet=quiet)
+    records = dedupe_records(load_catalog(home, quiet=quiet))
     q = query.strip().lower()
     if not q:
         return []
@@ -724,8 +777,45 @@ def search_catalog(
                 score += 2
         if score == 0:
             continue
+        score += min(int(record.get("use_count", 0) or 0), 10)
         scored.append((score, record, ", ".join(dict.fromkeys(reasons)) or "match"))
     scored.sort(key=lambda item: (-item[0], item[1].get("name", "")))
+
+    # Body-aware rerank: fuse the lexical order with a full-body BM25 order
+    # using Reciprocal Rank Fusion. Metadata-only search misses skills whose
+    # name and description are terse but whose body carries the procedure.
+    pool_size = min(len(scored), max(12, limit * 4))
+    pool = scored[:pool_size]
+    rest = scored[pool_size:]
+    if len(pool) > 1:
+        body_values = normalized_body_scores(
+            tokenize(query), [record for _, record, _ in pool]
+        )
+        if max(body_values, default=0.0) > 0:
+            lexical_rank = {
+                id(record): index for index, (_, record, _) in enumerate(pool)
+            }
+            body_order = sorted(
+                range(len(pool)), key=lambda index: -body_values[index]
+            )
+            body_rank = {
+                id(pool[index][1]): rank for rank, index in enumerate(body_order)
+            }
+            body_by_id = {
+                id(pool[index][1]): body_values[index] for index in range(len(pool))
+            }
+            fused: list[tuple[float, float, dict[str, Any], str, float]] = []
+            for score, record, reason in pool:
+                rrf = (
+                    1.0 / (60 + lexical_rank[id(record)] + 1)
+                    + 0.8 / (60 + body_rank[id(record)] + 1)
+                )
+                fused.append((rrf, score, record, reason, body_by_id[id(record)]))
+            fused.sort(key=lambda item: (-item[0], -item[1], item[2].get("name", "")))
+            scored = [
+                (score, record, reason + (", body" if body > 0 else ""))
+                for _, score, record, reason, body in fused
+            ] + rest
     results: list[dict[str, Any]] = []
     for score, record, reason in scored[: max(1, limit)]:
         native_hosts = native_hosts_for(record["name"], home, cwd)
@@ -965,7 +1055,7 @@ def route_skill(
         result["reason"] = f"global veto: {global_hit.get('pattern')}"
         return result
 
-    records = load_catalog(home, quiet=True)
+    records = dedupe_records(load_catalog(home, quiet=True))
     if not records:
         result["reason"] = "empty catalog"
         return result
@@ -1088,6 +1178,26 @@ def route_skill(
             0.55 * lex + 0.25 * item["rule"] + 0.10 * item["ctx"] + 0.10 * item["priority"]
         )
     candidates.sort(key=lambda item: (-item["score"], item["record"]["name"]))
+    pool = candidates[:20]
+    if len(pool) > 1:
+        body_values = normalized_body_scores(
+            query_tokens, [item["record"] for item in pool]
+        )
+        if max(body_values, default=0.0) > 0:
+            for item, body in zip(pool, body_values):
+                if body <= 0:
+                    continue
+                item["lex"] = min(1.0, item["lex"] + 0.15 * body)
+                item["score"] = (
+                    0.55 * item["lex"]
+                    + 0.25 * item["rule"]
+                    + 0.10 * item["ctx"]
+                    + 0.10 * item["priority"]
+                )
+                item["reasons"].append("body")
+            candidates.sort(
+                key=lambda item: (-item["score"], item["record"]["name"])
+            )
     top = candidates[0]
     second = candidates[1] if len(candidates) > 1 else None
     margin = top["score"] - (second["score"] if second else 0.0)

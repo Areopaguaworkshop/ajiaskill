@@ -1,0 +1,50 @@
+{"query": "draw the architecture of this repo", "skill": "archify"}
+{"query": "make a sequence diagram for this request", "skill": "archify"}
+{"query": "draw an ERD for these tables", "skill": "archify"}
+{"query": "answer this with an HTML page", "skill": "answer-me-with-html"}
+{"query": "make a visual explainer for this comparison", "skill": "answer-me-with-html"}
+{"query": "explain this visually as a page", "skill": "answer-me-with-html"}
+{"query": "open my logged-in browser and check the page", "skill": "browser-skill"}
+{"query": "fill this form in the browser", "skill": "browser-skill"}
+{"query": "test this UI in the browser", "skill": "browser-skill"}
+{"query": "create a verification skill for this repo", "skill": "create-verification-skill"}
+{"query": "prove this app flow works end to end", "skill": "create-verification-skill"}
+{"query": "drive the Finder window and rename this file", "skill": "cua-driver"}
+{"query": "use computer use to fill the desktop app", "skill": "cua-driver"}
+{"query": "the OpenShell sandbox returned policy_denied", "skill": "openshell-policy-advisor"}
+{"query": "make this page prettier", "skill": "impeccable"}
+{"query": "redesign the landing page", "skill": "impeccable"}
+{"query": "audit the UI hierarchy", "skill": "impeccable"}
+{"query": "use caveman mode for this answer", "skill": "caveman"}
+{"query": "be brief and cut the fluff", "skill": "caveman"}
+{"query": "use ponytail mode on this fix", "skill": "ponytail"}
+{"query": "give me the simplest solution that works", "skill": "ponytail"}
+{"query": "apply the karpathy guidelines to this refactor", "skill": "karpathy-guidelines"}
+{"query": "keep this change minimal and surgical", "skill": "karpathy-guidelines"}
+{"query": "use adhd mode for this plan", "skill": "i-have-adhd"}
+{"query": "make the next action obvious", "skill": "i-have-adhd"}
+{"query": "review the RTK pull request", "skill": "pr-review"}
+{"query": "batch review these RTK PRs", "skill": "pr-review"}
+{"query": "review PR 42 in the RTK repo", "skill": "pr-review"}
+{"query": "triage the open RTK PRs", "skill": "pr-triage"}
+{"query": "audit open pull requests", "skill": "pr-triage"}
+{"query": "run a full RTK triage", "skill": "rtk-triage"}
+{"query": "triage RTK issues and PRs together", "skill": "rtk-triage"}
+{"query": "run a security review on RTK", "skill": "security-guardian"}
+{"query": "check command injection in this CLI", "skill": "security-guardian"}
+{"query": "review shell escaping in the hook", "skill": "security-guardian"}
+{"query": "simplify this Rust code", "skill": "code-simplifier"}
+{"query": "this code is over-engineered", "skill": "code-simplifier"}
+{"query": "check RTK startup time", "skill": "performance"}
+{"query": "measure memory usage and token savings", "skill": "performance"}
+{"query": "which Rust design pattern fits this module", "skill": "design-patterns"}
+{"query": "use TDD for this Rust change", "skill": "rtk-tdd"}
+{"query": "write tests first for this RTK filter", "skill": "tdd-rust"}
+{"query": "triage the open issues", "skill": "issue-triage"}
+{"query": "make a repo recap for the team", "skill": "repo-recap"}
+{"query": "ship a new RTK release", "skill": "ship"}
+{"query": "bump the version and tag the release", "skill": "ship"}
+{"query": "grill me on this vague idea", "skill": "grill-me"}
+{"query": "write a plan for this feature", "skill": "write-plan"}
+{"query": "scan this skill before I install it", "skill": "ajia-scan"}
+{"query": "promote this skill into core", "skill": "ajia-promote"}

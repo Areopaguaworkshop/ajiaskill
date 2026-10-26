@@ -1,6 +1,6 @@
 ---
 name: tdd-rust
-description: TDD workflow for RTK filter development. Red-Green-Refactor with Rust idioms. Real fixtures, token savings assertions, snapshot tests with insta. Auto-triggers on new filter implementation.
+description: TDD for RTK filter development: Red-Green-Refactor, real fixtures, token-savings assertions, and insta snapshot tests. Use for a new filter or a failing test.
 license: Apache-2.0
 ---
 

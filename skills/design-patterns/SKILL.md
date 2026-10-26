@@ -1,6 +1,6 @@
 ---
 name: design-patterns
-description: Rust design patterns for RTK. Newtype, Builder, RAII, Trait Objects, State Machine. Applied to CLI filter modules. Use when designing new modules or refactoring existing ones.
+description: Rust design patterns for RTK: Newtype, Builder, RAII, trait objects, and state machines. Use when designing a new module or refactoring an existing one to a pattern.
 license: Apache-2.0
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: repo-recap
-description: Generate a comprehensive repo recap (PRs, issues, releases) for sharing with team. Pass "en" or "fr" as argument for language (default fr).
+description: Generate a repo recap of open PRs, issues, releases, and an executive summary. Use for a team update or a release note draft.
 license: Apache-2.0
 ---
 

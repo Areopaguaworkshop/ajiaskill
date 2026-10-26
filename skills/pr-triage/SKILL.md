@@ -1,6 +1,6 @@
 ---
 name: pr-triage
-description: PR triage: audit open PRs, deep review selected ones, draft and post review comments. Args: "all" to review all, PR numbers to focus (e.g. "42 57"), "en"/"fr" for language, no arg = audit only in French.
+description: Audit open RTK pull requests, review selected PRs, and draft review comments. Use for a PR triage pass, an open-PR audit, or before a release.
 license: Apache-2.0
 ---
 

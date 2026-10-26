@@ -1,6 +1,6 @@
 ---
 name: ship
-description: Build, commit, push & version bump workflow - automates the complete release cycle
+description: Ship an RTK release: build verification, version bump, changelog, git tag, and push. Use when releasing a new version.
 license: Apache-2.0
 ---
 

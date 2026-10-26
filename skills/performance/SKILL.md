@@ -1,6 +1,6 @@
 ---
 name: performance
-description: CLI performance optimization - startup time, memory usage, token savings benchmarking
+description: RTK CLI performance: startup time, memory usage, and token-savings benchmarks. Use when startup or memory regresses, or before a release.
 license: Apache-2.0
 ---
 

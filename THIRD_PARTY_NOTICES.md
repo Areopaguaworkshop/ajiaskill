@@ -150,8 +150,22 @@ output as triage, not a certificate.
 
 ## Routing references (ideas, not vendored)
 
-- **EverMind-AI/SkillCorpus** — Apache-2.0 — per-turn injection, weighted RRF, and a valid "none" gate.
+- **EverMind-AI/SkillCorpus** — Apache-2.0 — per-turn injection, weighted RRF, deduplication, and a valid "none" gate.
 - **zhengyanzhao1997/SkillRouter** — MIT — body-aware retrieval and rerank findings.
+- **Tencent/R3-Skill** — Apache-2.0 — query-conditional two-stage retrieval.
 - **aurelio-labs/semantic-router** — MIT — semantic routing concepts.
+- **jax-agent/skill-router** — MIT — compact skill index and on-demand load.
+- **LittlePeter52012/skill-router** — MIT — local keyword matching, fuzzy matching, and optional rerank.
+- **tsvelovskiysv/claude-skill-router** — MIT — project facets, trust ranking, and diverse selection.
+- **wuykjl/neuro-skill** — MIT — weighted RRF and offline hybrid routing.
 - **zhaoxuya520/reverse-skill** — MIT — rule priority and regression-case patterns.
 - **kerpopule/hermes-jev-skills** — MIT — suggestion UX and fatigue controls.
+- **DecimalAI Smart Route** — hosted API — hybrid retrieval, RRF, full-menu fallback, and effectiveness rerank.
+- **OATS** — arXiv 2603.13426 — outcome-aware tool selection.
+- **DSR** — arXiv 2609.05824 — diversity-aware skill reranking.
+- **SkillWeaver** — arXiv 2606.18051 — compositional routing.
+- **Semantic tool discovery** — arXiv 2603.20313 — vector retrieval for MCP tools.
+- **PinePaper-ToolBench** — benchmark — BM25 and knowledge-graph tool selection.
+- **MCP-Bench**, **LiveMCPBench**, **MCPToolBench++** — benchmarks — retrieval as the dominant MCP bottleneck.
+- **agentskills/agentskills** — Apache-2.0 / CC-BY-4.0 — Agent Skills format.
+- **NVIDIA SkillSpector**, **NVIDIA SkillEvaluator** — Apache-2.0 — safety and quality gates (already used as external tools).

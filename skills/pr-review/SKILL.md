@@ -1,6 +1,6 @@
 ---
 name: pr-review
-description: Batch review des PRs RTK par ordre de complexité croissante (XS → S → M → L). Pour chaque PR : vérifie l'état (conflits, CLA, reviews), lit le diff complet, analyse le code en contexte, présente un résumé avec lien + taille + recommandation. Attend validation explicite avant tout merge. Poste des commentaires boldguy-adapt sur les PRs bloquées (conflit, CLA, CHANGES_REQUESTED). Args: "triage" pour lancer un triage complet avant la review. "from:<num>" pour reprendre à partir d'un numéro de PR spécifique.
+description: Batch-review RTK pull requests in increasing size order. Check conflicts, CLA, and reviews; read the diff; summarize with a link, size, and recommendation; ask before merge. Use for RTK PR review or `triage`/`from:<num>`.
 license: Apache-2.0
 ---
 
