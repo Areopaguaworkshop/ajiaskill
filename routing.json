@@ -736,6 +736,431 @@
         "max_injections": 1,
         "always_apply": false
       }
+    },
+    "ajia-core/caveman": {
+      "capabilities": [
+        "style.terse"
+      ],
+      "triggers": {
+        "phrases": [
+          "caveman mode",
+          "talk like caveman",
+          "be brief",
+          "less tokens"
+        ],
+        "keywords": [
+          "caveman",
+          "terse",
+          "brief",
+          "compress",
+          "tokens"
+        ],
+        "regex": []
+      },
+      "examples": {
+        "positive": [
+          "use caveman mode for this answer",
+          "be brief and cut the fluff"
+        ],
+        "negative": [
+          "explain this in a detailed report",
+          "write a long tutorial"
+        ]
+      },
+      "negative_triggers": [
+        {
+          "pattern": "detailed report|long tutorial|full explanation",
+          "severity": "veto",
+          "unless": "brief|terse|caveman"
+        }
+      ],
+      "file_globs": [],
+      "host_fit": [
+        "*"
+      ],
+      "requires": {
+        "tools": []
+      },
+      "priority": 60,
+      "routing": {
+        "enabled": true,
+        "max_injections": 1,
+        "always_apply": false
+      }
+    },
+    "ajia-core/karpathy-guidelines": {
+      "capabilities": [
+        "code.guidelines"
+      ],
+      "triggers": {
+        "phrases": [
+          "karpathy guidelines",
+          "avoid overengineering",
+          "surgical change"
+        ],
+        "keywords": [
+          "karpathy",
+          "overengineering",
+          "simplicity",
+          "surgical",
+          "assumptions"
+        ],
+        "regex": []
+      },
+      "examples": {
+        "positive": [
+          "apply the karpathy guidelines to this refactor",
+          "keep this change minimal and surgical"
+        ],
+        "negative": [
+          "write a biography of andrej karpathy"
+        ]
+      },
+      "negative_triggers": [
+        {
+          "pattern": "biography|who is andrej",
+          "severity": "veto",
+          "unless": "code|guideline|refactor"
+        }
+      ],
+      "file_globs": [
+        "**/*.py",
+        "**/*.ts",
+        "**/*.tsx",
+        "**/*.go",
+        "**/*.rs"
+      ],
+      "host_fit": [
+        "*"
+      ],
+      "requires": {
+        "tools": []
+      },
+      "priority": 55,
+      "routing": {
+        "enabled": true,
+        "max_injections": 1,
+        "always_apply": false
+      }
+    },
+    "ajia-core/ponytail": {
+      "capabilities": [
+        "code.simplicity"
+      ],
+      "triggers": {
+        "phrases": [
+          "ponytail mode",
+          "be lazy",
+          "simplest solution",
+          "yagni"
+        ],
+        "keywords": [
+          "ponytail",
+          "yagni",
+          "lazy",
+          "simplest",
+          "minimal",
+          "bloat"
+        ],
+        "regex": []
+      },
+      "examples": {
+        "positive": [
+          "use ponytail mode on this fix",
+          "give me the simplest solution that works"
+        ],
+        "negative": [
+          "write a guide to ponytail hairstyles"
+        ]
+      },
+      "negative_triggers": [
+        {
+          "pattern": "hairstyle|hair tie|haircut",
+          "severity": "veto"
+        }
+      ],
+      "file_globs": [
+        "**/*.py",
+        "**/*.ts",
+        "**/*.tsx",
+        "**/*.go",
+        "**/*.rs"
+      ],
+      "host_fit": [
+        "*"
+      ],
+      "requires": {
+        "tools": []
+      },
+      "priority": 55,
+      "routing": {
+        "enabled": true,
+        "max_injections": 1,
+        "always_apply": false
+      }
+    },
+    "ajia-core/create-verification-skill": {
+      "capabilities": [
+        "verification.create",
+        "test.prove"
+      ],
+      "triggers": {
+        "phrases": [
+          "create a verification skill",
+          "prove this works",
+          "verify this app"
+        ],
+        "keywords": [
+          "verification",
+          "verify",
+          "prove",
+          "evidence",
+          "harness"
+        ],
+        "regex": []
+      },
+      "examples": {
+        "positive": [
+          "create a verification skill for this repo",
+          "prove the UI flow works end to end"
+        ],
+        "negative": [
+          "verify my identity",
+          "verify an email address"
+        ]
+      },
+      "negative_triggers": [
+        {
+          "pattern": "identity|email address|account verification",
+          "severity": "veto",
+          "unless": "app|ui|repo|test|harness"
+        }
+      ],
+      "file_globs": [
+        "**/*.py",
+        "**/*.ts",
+        "**/*.tsx",
+        "**/*.js",
+        "**/*.jsx"
+      ],
+      "host_fit": [
+        "*"
+      ],
+      "requires": {
+        "tools": []
+      },
+      "priority": 65,
+      "routing": {
+        "enabled": true,
+        "max_injections": 1,
+        "always_apply": false
+      }
+    },
+    "ajia-core/answer-me-with-html": {
+      "capabilities": [
+        "answer.visual",
+        "explainer.html"
+      ],
+      "triggers": {
+        "phrases": [
+          "answer with html",
+          "make a page",
+          "visual explainer",
+          "explain visually"
+        ],
+        "keywords": [
+          "html",
+          "explainer",
+          "visual",
+          "page",
+          "diagram"
+        ],
+        "regex": []
+      },
+      "examples": {
+        "positive": [
+          "answer this with an HTML page",
+          "make a visual explainer for this comparison"
+        ],
+        "negative": [
+          "write raw production HTML",
+          "build a marketing website"
+        ]
+      },
+      "negative_triggers": [
+        {
+          "pattern": "production website|marketing site|landing page",
+          "severity": "veto",
+          "unless": "explain|answer|explainer|visual"
+        }
+      ],
+      "file_globs": [],
+      "host_fit": [
+        "*"
+      ],
+      "requires": {
+        "tools": []
+      },
+      "priority": 70,
+      "routing": {
+        "enabled": true,
+        "max_injections": 1,
+        "always_apply": false
+      }
+    },
+    "ajia-core/openshell-policy-advisor": {
+      "capabilities": [
+        "sandbox.openshell",
+        "policy.network"
+      ],
+      "triggers": {
+        "phrases": [
+          "openshell policy denied",
+          "policy.local",
+          "network policy"
+        ],
+        "keywords": [
+          "openshell",
+          "policy",
+          "denied",
+          "sandbox",
+          "network"
+        ],
+        "regex": []
+      },
+      "examples": {
+        "positive": [
+          "the OpenShell sandbox returned policy_denied",
+          "propose a narrow network policy"
+        ],
+        "negative": [
+          "what is our company policy",
+          "write a privacy policy"
+        ]
+      },
+      "negative_triggers": [
+        {
+          "pattern": "company policy|privacy policy|refund policy",
+          "severity": "veto",
+          "unless": "openshell|sandbox|network"
+        }
+      ],
+      "file_globs": [],
+      "host_fit": [
+        "*"
+      ],
+      "requires": {
+        "tools": []
+      },
+      "priority": 60,
+      "routing": {
+        "enabled": true,
+        "max_injections": 1,
+        "always_apply": false
+      }
+    },
+    "ajia-core/cua-driver": {
+      "capabilities": [
+        "computer.use",
+        "gui.automation"
+      ],
+      "triggers": {
+        "phrases": [
+          "drive this app",
+          "computer use",
+          "click in the app",
+          "operate the gui"
+        ],
+        "keywords": [
+          "cua",
+          "gui",
+          "desktop",
+          "click",
+          "window",
+          "computer-use"
+        ],
+        "regex": []
+      },
+      "examples": {
+        "positive": [
+          "drive the Finder window and rename this file",
+          "use computer use to fill the desktop app"
+        ],
+        "negative": [
+          "click a button in a web page",
+          "build a GUI with tkinter"
+        ]
+      },
+      "negative_triggers": [
+        {
+          "pattern": "tkinter|pyqt|build a gui|web page",
+          "severity": "veto",
+          "unless": "operate|drive|computer|desktop"
+        }
+      ],
+      "file_globs": [],
+      "host_fit": [
+        "*"
+      ],
+      "requires": {
+        "tools": []
+      },
+      "priority": 65,
+      "routing": {
+        "enabled": true,
+        "max_injections": 1,
+        "always_apply": false
+      }
+    },
+    "ajia-core/i-have-adhd": {
+      "capabilities": [
+        "style.focus",
+        "output.adhd"
+      ],
+      "triggers": {
+        "phrases": [
+          "i have adhd",
+          "adhd mode",
+          "make this actionable"
+        ],
+        "keywords": [
+          "adhd",
+          "focus",
+          "action",
+          "next step",
+          "overwhelm"
+        ],
+        "regex": []
+      },
+      "examples": {
+        "positive": [
+          "use adhd mode for this plan",
+          "make the next action obvious"
+        ],
+        "negative": [
+          "diagnose adhd",
+          "adhd medication side effects"
+        ]
+      },
+      "negative_triggers": [
+        {
+          "pattern": "diagnos|medication|symptom|treatment",
+          "severity": "veto"
+        }
+      ],
+      "file_globs": [],
+      "host_fit": [
+        "*"
+      ],
+      "requires": {
+        "tools": []
+      },
+      "priority": 60,
+      "routing": {
+        "enabled": true,
+        "max_injections": 1,
+        "always_apply": false
+      }
     }
   },
   "global_negative_triggers": [

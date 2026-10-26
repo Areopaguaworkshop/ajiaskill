@@ -35,7 +35,7 @@ python3 bin/ajia route "review this PR" --json --host opencode
 
 ## npm
 
-Published on npm as [`ajiaskill`](https://www.npmjs.com/package/ajiaskill). It ships the CLI, the MCP server, and the eight core skills. Python 3.10+ is required; the Node wrapper calls `python3` unless `AJIA_PYTHON` is set.
+Published on npm as [`ajiaskill`](https://www.npmjs.com/package/ajiaskill). It ships the CLI, the MCP server, and the core skills. Python 3.10+ is required; the Node wrapper calls `python3` unless `AJIA_PYTHON` is set.
 
 ```bash
 npm install -g ajiaskill
@@ -253,14 +253,35 @@ smaller example.
 
 ## Core skills
 
+Workflow and output style:
+
 - `grill-me` — turn a vague idea into shared understanding.
 - `write-plan` — turn that understanding into an executable plan.
+- `caveman` — terse caveman voice; every technical fact, no ceremony.
+- `ponytail` — lazy senior dev mode; the smallest complete change.
+- `karpathy-guidelines` — surgical changes, explicit assumptions, verifiable success.
+- `i-have-adhd` — lead with the next action and keep progress visible.
+
+Platform:
+
 - `ajia-find` — fallback catalog search/use.
 - `ajia-router` — fallback router for manual use.
 - `ajia-scan` — the safety stack and report reading, including PII and lint.
 - `ajia-promote` — the gated promotion flow.
 - `ajia-sandbox` — no-network script execution.
 - `ajia-learn` — Hermes `/learn` foundry.
+- `create-verification-skill` — generate a project-local skill that drives the real app and captures evidence.
+
+Output and interfaces:
+
+- `archify` — validated architecture, flow, sequence, ERD, and timeline diagrams as standalone HTML; export images or print to PDF.
+- `answer-me-with-html` — one-page visual HTML explainer from a short Markdown draft.
+- `impeccable` — frontend design, redesign, audit, and polish.
+- `browser-skill` — drive the user's logged-in Chromium browser through `bsk`.
+- `cua-driver` — drive native GUI apps through the `cua-driver` CLI or MCP server.
+- `openshell-policy-advisor` — narrow network-policy proposals when an OpenShell sandbox returns `policy_denied`.
+
+The bundled third-party skills keep their upstream notices in `THIRD_PARTY_NOTICES.md`. Some need an external tool: `archify` and `answer-me-with-html` run bundled Node scripts, `impeccable` fetches its engine on first run, `cua-driver` needs the Cua driver, `browser-skill` needs `bsk` and its browser extension, and `openshell-policy-advisor` runs inside an OpenShell sandbox.
 
 ## Layout
 

@@ -1,6 +1,8 @@
 # Third-party notices
 
-`ajiaskill` adapts ideas and, where noted, text from these MIT-licensed projects.
+`ajiaskill` adapts ideas and, where noted, text and code from these MIT- and
+Apache-2.0-licensed projects. Each bundled skill keeps its upstream license
+files next to its `SKILL.md`.
 
 ## Matt Pocock — `mattpocock/skills`
 
@@ -18,11 +20,100 @@
 - License: MIT
 - Copyright: Jesse Vincent
 
+## Julius Brussee — `JuliusBrussee/caveman`
+
+- Source: https://github.com/JuliusBrussee/caveman
+- Files: `skills/caveman/SKILL.md`
+- Used by: `skills/caveman/`
+- License: Apache-2.0; pre-3.0 parts under MIT (`LICENSE-MIT`)
+- Copyright: 2026 Julius Brussee
+
+## multica-ai — `andrej-karpathy-skills`
+
+- Source: https://github.com/multica-ai/andrej-karpathy-skills
+- Files: `skills/karpathy-guidelines/SKILL.md`
+- Used by: `skills/karpathy-guidelines/`
+- License: MIT, declared in `.claude-plugin/plugin.json`; the upstream tree has no LICENSE file
+- Copyright: multica-ai contributors
+
+## Dietrich Gebert — `DietrichGebert/ponytail`
+
+- Source: https://github.com/DietrichGebert/ponytail
+- Files: `skills/ponytail/SKILL.md`
+- Used by: `skills/ponytail/`
+- License: MIT
+- Copyright: 2026 DietrichGebert
+
+## tt-a1i — `tt-a1i/archify`
+
+- Source: https://github.com/tt-a1i/archify
+- Files: `archify/SKILL.md`, `archify/bin/`, `archify/references/`, `archify/renderers/`, `archify/schemas/`, `archify/explainer/`, `archify/assets/`
+- Used by: `skills/archify/` (upstream `examples/` excluded)
+- License: Apache-2.0; pre-transition parts under MIT (`LICENSE-MIT`)
+- Copyright: 2026 tt-a1i (Archify); 2025 Cocoon AI
+- Notice: `skills/archify/NOTICE`, `skills/archify/THIRD_PARTY_NOTICES.md`
+
+## Lauren Tan — `backnotprop/pstack`
+
+- Source: https://github.com/backnotprop/pstack
+- Files: `skills/create-verification-skill/SKILL.md`, `skills/create-verification-skill/references/`
+- Used by: `skills/create-verification-skill/`
+- License: MIT
+- Copyright: 2026 Lauren Tan
+
+## Answer me with HTML — `QingYunA/answer-me-with-html`
+
+- Source: https://github.com/QingYunA/answer-me-with-html
+- Files: `skills/answer-me-with-html/SKILL.md`, `scripts/am.mjs`, `references/`, `licenses/`
+- Used by: `skills/answer-me-with-html/`
+- License: MIT
+- Copyright: 2026 Answer me with HTML contributors
+
+## Impeccable — `pbakaus/impeccable`
+
+- Source: https://github.com/pbakaus/impeccable
+- Files: `plugin/skills/impeccable/SKILL.md`, `reference/`, `scripts/`
+- Used by: `skills/impeccable/`
+- License: Apache-2.0
+- Copyright: pbakaus and contributors
+- Notice: `skills/impeccable/NOTICE`
+
+## NVIDIA — `NVIDIA/OpenShell`
+
+- Source: https://github.com/NVIDIA/OpenShell
+- Files: `crates/openshell-supervisor-process/src/skills/policy-advisor/SKILL.md`
+- Used by: `skills/openshell-policy-advisor/`
+- License: Apache-2.0
+- Copyright: 2026 NVIDIA CORPORATION & AFFILIATES
+
+## Cua AI — `trycua/cua`
+
+- Source: https://github.com/trycua/cua
+- Files: `libs/cua-driver/rust/Skills/cua-driver/`
+- Used by: `skills/cua-driver/`
+- License: MIT
+- Copyright: 2025 Cua AI, Inc.
+
+## Ayoub Ghriss — `ayghri/i-have-adhd`
+
+- Source: https://github.com/ayghri/i-have-adhd
+- Files: `skills/i-have-adhd/SKILL.md`
+- Used by: `skills/i-have-adhd/`
+- License: MIT
+- Copyright: 2026 Ayoub Ghriss
+
+## Tencent — `Tencent/BrowserSkill`
+
+- Source: https://github.com/Tencent/BrowserSkill
+- Files: `crates/bsk-cli/skill/SKILL.md`, `references/`
+- Used by: `skills/browser-skill/`
+- License: MIT
+- Copyright: 2026 Tencent
+
 ## Planned adaptations
 
 The remaining skills will adapt these MIT sources. Add their notices when the files land.
 
-- `cursor/plugins/pstack` — Lauren Tan — proof ladder, `prove-it-works`, verification-skill pattern.
 - `addyosmani/agent-skills` — Addy Osmani — Definition of Done, test sizing.
 - `cloudflare/security-audit-skill` — Cloudflare — independent verifier and evidence verdicts.
 
