@@ -3,6 +3,15 @@
   "version": "0.1.0",
   "description": "Personal skill manager and platform for coding agents: catalog, MCP, native-first routing, and gated promotion.",
   "license": "MIT",
+  "author": "ajia",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Areopaguaworkshop/ajiaskill.git"
+  },
+  "homepage": "https://github.com/Areopaguaworkshop/ajiaskill#readme",
+  "bugs": {
+    "url": "https://github.com/Areopaguaworkshop/ajiaskill/issues"
+  },
   "bin": {
     "ajiaskill": "npm/ajia.js",
     "ajia": "npm/ajia.js",
@@ -25,7 +34,8 @@
   "scripts": {
     "test": "python3 -m unittest discover -s tests",
     "validate": "python3 scripts/validate-skills.py",
-    "pack:check": "npm pack --dry-run"
+    "pack:check": "npm pack --dry-run",
+    "prepublishOnly": "npm run validate && npm test"
   },
   "keywords": [
     "skills",

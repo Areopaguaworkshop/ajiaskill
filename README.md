@@ -35,7 +35,7 @@ python3 bin/ajia route "review this PR" --json --host opencode
 
 ## npm
 
-The npm package is `ajiaskill`. It ships the CLI, the MCP server, and the eight core skills. Python 3.10+ is required; the Node wrapper calls `python3` unless `AJIA_PYTHON` is set.
+Published on npm as [`ajiaskill`](https://www.npmjs.com/package/ajiaskill). It ships the CLI, the MCP server, and the eight core skills. Python 3.10+ is required; the Node wrapper calls `python3` unless `AJIA_PYTHON` is set.
 
 ```bash
 npm install -g ajiaskill
@@ -267,6 +267,8 @@ smaller example.
 ```text
 bin/ajia                 # CLI, router, and MCP server
 bin/ajia-hook            # generic Codex/Claude/Hermes hook
+npm/                     # Node entry points for the npm package
+package.json             # npm manifest, bin mapping, and publish file list
 hosts.json               # native and project skill roots per host
 profiles.json            # sources, hosts, routing, safety
 routing.json             # routing metadata for core and common skills
