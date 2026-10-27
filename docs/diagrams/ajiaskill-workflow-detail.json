@@ -1,0 +1,64 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "ajiaskill — Request to skill",
+    "quality_profile": "showcase",
+    "output": "docs/diagrams/ajiaskill-workflow-detail.html",
+    "repository": {
+      "url": "https://github.com/Areopaguaworkshop/ajiaskill.git",
+      "provider": "github",
+      "revision": "150b1777301992143f4c3551c4dff9083cc702e5"
+    }
+  },
+  "lanes": [
+    { "id": "user", "label": "User" },
+    { "id": "host", "label": "Host + model" },
+    { "id": "select", "label": "Selection" },
+    { "id": "mcp", "label": "MCP + CLI" },
+    { "id": "catalog", "label": "Catalog + state" },
+    { "id": "exec", "label": "Execution" }
+  ],
+  "phases": [
+    { "id": "intake", "label": "Intake", "fromCol": 0, "toCol": 1 },
+    { "id": "choose", "label": "Choose skill", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "use", "label": "Use + produce", "fromCol": 4, "toCol": 5, "variant": "dashed" }
+  ],
+  "groups": [
+    { "id": "native_path", "label": "Native-first path", "lane": "select", "fromCol": 1, "toCol": 2, "variant": "security" },
+    { "id": "mcp_path", "label": "Model-invoked tools", "lane": "mcp", "fromCol": 2, "toCol": 4, "variant": "emphasis" },
+    { "id": "exec_path", "label": "Instructions become output", "lane": "exec", "fromCol": 3, "toCol": 5, "variant": "dashed" }
+  ],
+  "mainPath": ["task", "host", "policy", "search", "use", "skill", "result"],
+  "nodes": [
+    { "id": "task", "lane": "user", "col": 0, "type": "external", "label": "User Task", "sublabel": "natural language", "width": 140 },
+    { "id": "host", "lane": "host", "col": 1, "type": "frontend", "label": "Host + Model", "sublabel": "reads the message", "width": 150, "sources": [{"path": "hosts.json", "line": 1, "end_line": 74, "label": "host roots"}] },
+    { "id": "native", "lane": "select", "col": 2, "type": "security", "label": "Native Skill?", "sublabel": "descriptions in host", "width": 150, "sources": [{"path": "bin/ajia", "line": 455, "end_line": 508, "label": "native inventory"}, {"path": "hosts.json", "line": 1, "end_line": 74, "label": "host roots"}] },
+    { "id": "policy", "lane": "mcp", "col": 2, "type": "security", "label": "Trigger Policy", "sublabel": "initialize instructions", "tag": "advisory", "width": 150, "sources": [{"path": "bin/ajia", "line": 28, "end_line": 43, "label": "policy text"}, {"path": "bin/ajia", "line": 1480, "end_line": 1489, "label": "initialize response"}] },
+    { "id": "search", "lane": "mcp", "col": 3, "type": "backend", "label": "ajia_search", "sublabel": "query the catalog", "width": 140, "sources": [{"path": "bin/ajia", "line": 677, "end_line": 754, "label": "search"}, {"path": "bin/ajia", "line": 1418, "end_line": 1443, "label": "tool schema"}] },
+    { "id": "catalog", "lane": "catalog", "col": 3, "type": "database", "label": "Catalog", "sublabel": "skills.jsonl", "width": 140, "sources": [{"path": "bin/ajia", "line": 509, "end_line": 676, "label": "build/load catalog"}] },
+    { "id": "use", "lane": "mcp", "col": 4, "type": "backend", "label": "ajia_use", "sublabel": "id -> body + base_dir", "width": 150, "sources": [{"path": "bin/ajia", "line": 791, "end_line": 856, "label": "use"}, {"path": "bin/ajia", "line": 1444, "end_line": 1465, "label": "tool schema"}] },
+    { "id": "store", "lane": "catalog", "col": 4, "type": "database", "label": "Read-only Store", "sublabel": "exact bytes", "width": 140, "sources": [{"path": "bin/ajia", "line": 97, "end_line": 110, "label": "state paths"}, {"path": "bin/ajia", "line": 791, "end_line": 856, "label": "use"}] },
+    { "id": "skill", "lane": "exec", "col": 5, "type": "backend", "label": "SKILL.md", "sublabel": "follow in place", "width": 140, "sources": [{"path": "skills/archify/SKILL.md", "line": 1, "end_line": 5, "label": "core skill"}, {"path": "skills/pr-review/SKILL.md", "line": 1, "end_line": 5, "label": "core skill"}] },
+    { "id": "result", "lane": "user", "col": 5, "type": "frontend", "label": "Answer / Artifact", "sublabel": "text, HTML, PDF", "width": 150 }
+  ],
+  "edges": [
+    { "id": "task-host", "from": "task", "to": "host", "label": "message", "variant": "emphasis" },
+    { "id": "host-native", "from": "host", "to": "native", "label": "check native", "variant": "security" },
+    { "id": "native-skill", "from": "native", "to": "skill", "label": "load native", "variant": "security", "role": "branch" },
+    { "id": "host-policy", "from": "host", "to": "policy", "label": "no native match", "variant": "default" },
+    { "id": "policy-search", "from": "policy", "to": "search", "label": "call tool", "variant": "dashed" },
+    { "id": "search-catalog", "from": "search", "to": "catalog", "label": "query", "variant": "default" },
+    { "id": "catalog-search", "from": "catalog", "to": "search", "label": "ranked", "variant": "default", "role": "return" },
+    { "id": "search-use", "from": "search", "to": "use", "label": "selected id", "variant": "emphasis" },
+    { "id": "use-store", "from": "use", "to": "store", "label": "copy", "variant": "dashed" },
+    { "id": "use-skill", "from": "use", "to": "skill", "label": "body + base_dir", "variant": "emphasis" },
+    { "id": "skill-result", "from": "skill", "to": "result", "label": "follow skill", "variant": "emphasis" },
+    { "id": "host-result", "from": "host", "to": "result", "label": "reply", "variant": "default", "role": "return" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Who decides", "items": ["The host and model read the user message.", "The MCP server only answers ajia_search and ajia_use calls."] },
+    { "dot": "emerald", "title": "Native-first", "items": ["Installed skill descriptions are available before any MCP call.", "A native match wins; ajia_use refuses a duplicate fallback."] },
+    { "dot": "rose", "title": "Use is not install", "items": ["ajia_use copies exact bytes to a read-only store.", "Promotion remains a separate scan-and-approve step."] }
+  ]
+}
