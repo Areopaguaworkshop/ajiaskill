@@ -867,6 +867,224 @@ def normalized_body_scores(
     return [(score - low) / (high - low) for score in scores]
 
 
+def trust_score(record: dict[str, Any]) -> float:
+    used = min(int(record.get("use_count", 0) or 0), 10) / 10
+    license_value = str(record.get("license", "unknown")).lower()
+    known_license = 0.0 if license_value in {"", "unknown"} else 1.0
+    core = 1.0 if record.get("source", {}).get("id") == "ajia-core" else 0.0
+    return round(0.4 * used + 0.3 * known_license + 0.3 * core, 3)
+
+
+def jaccard(left: set[str], right: set[str]) -> float:
+    if not left or not right:
+        return 0.0
+    return len(left & right) / len(left | right)
+
+
+def diversify(
+    items: list[tuple[float, dict[str, Any], str]],
+    limit: int,
+    threshold: float = 0.8,
+) -> list[tuple[float, dict[str, Any], str]]:
+    """Greedy MMR-like selection over description tokens."""
+    selected: list[tuple[float, dict[str, Any], str]] = []
+    seen: list[set[str]] = []
+    deferred: list[tuple[float, dict[str, Any], str]] = []
+    for item in items:
+        tokens = set(tokenize(str(item[1].get("description", ""))))
+        if seen and any(jaccard(tokens, other) > threshold for other in seen):
+            deferred.append(item)
+            continue
+        selected.append(item)
+        seen.append(tokens)
+        if len(selected) >= limit:
+            break
+    if len(selected) < limit:
+        for item in deferred:
+            selected.append(item)
+            if len(selected) >= limit:
+                break
+    return selected
+
+
+def full_menu(
+    home: Path,
+    source: str | None = None,
+    host: str | None = None,
+    cwd: str | None = None,
+) -> list[dict[str, Any]]:
+    records = dedupe_records(load_catalog(home, quiet=True))
+    allowed_sources = set(profile_config(home).get("sources", ["*"]))
+    results: list[dict[str, Any]] = []
+    for record in records:
+        source_id = record.get("source", {}).get("id", "")
+        if source and source_id != source:
+            continue
+        if "*" not in allowed_sources and source_id not in allowed_sources:
+            continue
+        native_hosts = native_hosts_for(record["name"], home, cwd)
+        results.append(
+            {
+                "id": record["id"],
+                "name": record["name"],
+                "description": record["description"],
+                "source": record["source"],
+                "content_hash": record["content_hash"],
+                "license": record.get("license", "unknown"),
+                "license_source": record.get("license_source", "unknown"),
+                "risk": record.get("risk", "unknown"),
+                "generated": record.get("generated", False),
+                "generated_by": record.get("generated_by"),
+                "curator_state": record.get("curator_state"),
+                "use_count": record.get("use_count", 0),
+                "score": 0,
+                "trust": trust_score(record),
+                "match_reason": "full menu",
+                "native_hosts": native_hosts,
+                "native": bool(host and host in native_hosts),
+            }
+        )
+    results.sort(key=lambda item: (-item["trust"], item["name"]))
+    return results
+
+
+GATE_SYSTEM = (
+    "You select agent skills. Return JSON only, in the form "
+    '{"skills":["skill-id"]}. Use 0 to 2 ids from the candidate list. '
+    "Prefer an empty list when no candidate clearly fits. Never invent an id."
+)
+
+
+def gate_config() -> dict[str, Any] | None:
+    url = os.environ.get("AJIA_GATE_URL", "").strip()
+    if not url:
+        return None
+    try:
+        safe_http_url(url)
+        timeout = float(os.environ.get("AJIA_GATE_TIMEOUT", "8"))
+    except (SkillError, ValueError):
+        return None
+    return {
+        "url": url,
+        "model": os.environ.get("AJIA_GATE_MODEL", "gpt-4o-mini").strip()
+        or "gpt-4o-mini",
+        "key": os.environ.get("AJIA_GATE_API_KEY", ""),
+        "timeout": max(0.2, timeout),
+    }
+
+
+def gate_candidates(
+    home: Path,
+    query: str,
+    candidates: list[dict[str, Any]],
+    max_select: int = 2,
+) -> list[str] | None:
+    cfg = gate_config()
+    if not cfg or len(candidates) < 2:
+        return None
+    lines: list[str] = []
+    for candidate in candidates[:8]:
+        body = ""
+        try:
+            record = resolve_skill(home, str(candidate.get("id", "")), quiet=True)
+            body = skill_body(record, 800)
+        except SkillError:
+            body = ""
+        lines.append(
+            f"- id: {candidate.get('id')}\n"
+            f"  name: {candidate.get('name')}\n"
+            f"  description: {str(candidate.get('description', ''))[:240]}\n"
+            f"  body: {body[:600]}"
+        )
+    prompt = f"User task:\n{query}\n\nCandidates:\n" + "\n".join(lines)
+    payload = json.dumps(
+        {
+            "model": cfg["model"],
+            "messages": [
+                {"role": "system", "content": GATE_SYSTEM},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0,
+        }
+    ).encode("utf-8")
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": f"ajia/{VERSION}",
+    }
+    if cfg["key"]:
+        headers["Authorization"] = f"Bearer {cfg['key']}"
+    try:
+        request = Request(
+            cfg["url"], data=payload, headers=headers, method="POST"
+        )
+        # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
+        with urlopen(request, timeout=cfg["timeout"]) as response:
+            data = json.load(response)
+    except Exception:
+        return None
+    choices = data.get("choices") if isinstance(data, dict) else None
+    if not isinstance(choices, list) or not choices:
+        return None
+    message = choices[0].get("message") if isinstance(choices[0], dict) else None
+    content = message.get("content") if isinstance(message, dict) else None
+    if not isinstance(content, str):
+        return None
+    start = content.find("{")
+    end = content.rfind("}")
+    if start == -1 or end <= start:
+        return None
+    try:
+        parsed = json.loads(content[start : end + 1])
+    except json.JSONDecodeError:
+        return None
+    ids = parsed.get("skills") if isinstance(parsed, dict) else None
+    if not isinstance(ids, list):
+        return None
+    allowed = {str(candidate.get("id")) for candidate in candidates}
+    return [str(item) for item in ids if str(item) in allowed][:max_select]
+
+
+COMPOSE_SPLIT = re.compile(r"\s*(?:;|\+|\bthen\b|\band\b)\s*", re.I)
+
+
+def compose_plan(
+    home: Path,
+    query: str,
+    host: str | None = None,
+    limit: int = 3,
+) -> dict[str, Any]:
+    parts = [part.strip(" ,.") for part in COMPOSE_SPLIT.split(query)]
+    parts = [part for part in parts if part]
+    if len(parts) < 2:
+        parts = [query]
+    plan: list[dict[str, Any]] = []
+    selected_ids: set[str] = set()
+    skills: list[dict[str, Any]] = []
+    for part in parts:
+        routed = route_skill(home, part, host=host, include_body=False)
+        selected = routed.get("selected")
+        plan.append(
+            {
+                "query": part,
+                "decision": routed.get("decision"),
+                "selected": selected,
+                "confidence": routed.get("confidence"),
+            }
+        )
+        if selected and selected.get("id") not in selected_ids:
+            selected_ids.add(str(selected["id"]))
+            skills.append(selected)
+        if len(skills) >= max(1, limit):
+            break
+    return {
+        "schema": 1,
+        "decision": "inject" if skills else "none",
+        "skills": skills,
+        "plan": plan,
+        "reason": "composed" if len(parts) > 1 else "single",
+    }
+
+
 def search_catalog(
     home: Path,
     query: str,
@@ -933,7 +1151,13 @@ def search_catalog(
         if not reason:
             reason = "dense" if id(record) in dense_top else "match"
         scored.append((score, record, reason))
-    scored.sort(key=lambda item: (-item[0], item[1].get("name", "")))
+    scored.sort(
+        key=lambda item: (
+            -item[0],
+            -trust_score(item[1]),
+            item[1].get("name", ""),
+        )
+    )
 
     # Body-aware rerank: fuse the lexical order with a full-body BM25 order
     # using Reciprocal Rank Fusion. Metadata-only search misses skills whose
@@ -982,8 +1206,9 @@ def search_catalog(
                 (score, record, reason + (", " + ", ".join(tags) if tags else ""))
                 for _, score, record, reason, tags in fused
             ] + rest
+    scored = diversify(scored, max(1, limit))
     results: list[dict[str, Any]] = []
-    for score, record, reason in scored[: max(1, limit)]:
+    for score, record, reason in scored:
         native_hosts = native_hosts_for(record["name"], home, cwd)
         results.append(
             {
@@ -1000,6 +1225,7 @@ def search_catalog(
                 "curator_state": record.get("curator_state"),
                 "use_count": record.get("use_count", 0),
                 "score": score,
+                "trust": trust_score(record),
                 "match_reason": reason,
                 "native_hosts": native_hosts,
                 "native": bool(host and host in native_hosts),
@@ -1401,6 +1627,7 @@ def route_skill(
             "id": item["record"]["id"],
             "name": item["record"]["name"],
             "score": round(item["score"], 3),
+            "trust": trust_score(item["record"]),
             "components": {
                 "lex": round(item["lex"], 3),
                 "dense": round(item.get("dense", 0.0), 3),
@@ -1467,6 +1694,23 @@ def route_skill(
 
 
 def cmd_route(home: Path, args: argparse.Namespace) -> int:
+    if getattr(args, "multi", 0):
+        plan = compose_plan(
+            home,
+            args.query,
+            host=args.host,
+            limit=args.multi,
+        )
+        if args.json:
+            print(json.dumps(plan, ensure_ascii=False, indent=2))
+            return 0
+        print(f"decision: {plan['decision']}  reason: {plan['reason']}")
+        for item in plan["plan"]:
+            selected = item.get("selected")
+            label = selected["id"] if selected else "-"
+            print(f"  {item['decision']:8} {label:32} {item['query']}")
+        return 0
+
     result = route_skill(
         home,
         args.query,
@@ -1475,6 +1719,53 @@ def cmd_route(home: Path, args: argparse.Namespace) -> int:
         limit=args.limit,
         include_body=not args.no_body,
     )
+    if getattr(args, "gate", False):
+        gate_ids = gate_candidates(home, args.query, result["candidates"])
+        result["gate"] = {"used": gate_ids is not None, "ids": gate_ids or []}
+        if gate_ids is not None:
+            if not gate_ids:
+                result.update(
+                    decision="none",
+                    selected=None,
+                    confidence=0.0,
+                    reason="gate: no fit",
+                    body=None,
+                    base_dir=None,
+                    content_hash=None,
+                )
+            else:
+                chosen = next(
+                    (
+                        candidate
+                        for candidate in result["candidates"]
+                        if candidate.get("id") == gate_ids[0]
+                    ),
+                    None,
+                )
+                if chosen:
+                    result.update(
+                        decision="inject",
+                        selected=chosen,
+                        confidence=chosen.get("score", 0.0),
+                        reason="gate selected",
+                    )
+                    if not args.no_body:
+                        try:
+                            used = use_skill(
+                                home,
+                                gate_ids[0],
+                                agent="gate",
+                                quiet=True,
+                                host=args.host,
+                            )
+                            result.update(
+                                body=used["body"],
+                                base_dir=used["base_dir"],
+                                content_hash=used["content_hash"],
+                            )
+                        except SkillError as exc:
+                            result["gate"]["error"] = str(exc)
+                            result.update(body=None, base_dir=None)
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
@@ -1952,14 +2243,22 @@ def cmd_catalog_stats(home: Path, args: argparse.Namespace) -> int:
 
 
 def cmd_search(home: Path, args: argparse.Namespace) -> int:
-    results = search_catalog(
-        home,
-        args.query,
-        limit=args.limit,
-        source=args.source,
-        host=args.host,
-        cwd=args.cwd,
-    )
+    if getattr(args, "all", False):
+        results = full_menu(
+            home,
+            source=args.source,
+            host=args.host,
+            cwd=args.cwd,
+        )
+    else:
+        results = search_catalog(
+            home,
+            args.query,
+            limit=args.limit,
+            source=args.source,
+            host=args.host,
+            cwd=args.cwd,
+        )
     if args.json:
         print(json.dumps(results, ensure_ascii=False, indent=2))
         return 0
@@ -2845,6 +3144,7 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--source")
     search.add_argument("--host")
     search.add_argument("--cwd")
+    search.add_argument("--all", action="store_true", help="Return the full deduplicated menu.")
     search.add_argument("--json", action="store_true")
 
     use = sub.add_parser("use", help="Use a skill without installing it.")
@@ -2864,6 +3164,8 @@ def build_parser() -> argparse.ArgumentParser:
     route.add_argument("--json", action="store_true")
     route.add_argument("--explain", action="store_true")
     route.add_argument("--no-body", action="store_true")
+    route.add_argument("--gate", action="store_true", help="Use AJIA_GATE_URL as a 0-2 skill selector.")
+    route.add_argument("--multi", type=int, default=0, help="Compose up to N skills from clauses.")
 
     remote = sub.add_parser("remote", help="Search or install upstream skills.")
     remote_sub = remote.add_subparsers(dest="remote_command", required=True)

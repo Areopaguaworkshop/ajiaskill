@@ -107,7 +107,31 @@ export AJIA_EMBED_MODEL="nomic-embed-text"
 
 Skill texts are cached by content hash in `~/.ajia/catalog/embeddings.json`. Search fuses lexical, body, and dense ranks with RRF; the router adds a dense signal when it is available. If the endpoint is unset, unreachable, or returns invalid data, both fall back to lexical + body. The endpoint receives skill names, descriptions, and a body excerpt, so use a local model if that text must not leave the machine. `http` is allowed only on loopback; use `https` elsewhere.
 
-The router returns `native` when the host already has the skill, `inject` when it can use a source or core body, `suggest` when ambiguous, and `none` when no match is safe. The primary automatic path is still MCP. `ajia-router` is the manual fallback.
+### Optional 0-2 gate
+
+Set a chat-completions endpoint to let a model select 0-2 candidates after retrieval:
+
+```bash
+export AJIA_GATE_URL="http://127.0.0.1:11434/v1/chat/completions"
+export AJIA_GATE_MODEL="llama3.1:8b"
+# export AJIA_GATE_API_KEY="..."
+# export AJIA_GATE_TIMEOUT="8"
+
+ajia route "draw the architecture of this repo" --gate --json
+```
+
+The gate sees the top candidates with a body excerpt and returns `{"skills":[...]}`. It can return none. Any error, timeout, or invalid id keeps the retrieval result. `bin/ajia-hook` adds `--gate` automatically when `AJIA_GATE_URL` is set.
+
+### Composition and full menu
+
+```bash
+ajia route "scan this skill and promote it" --multi 3 --json
+ajia search "all" --all --source ajia-core --json
+```
+
+`--multi` splits a task into clauses, routes each, and returns a de-duplicated skill plan. It is a heuristic, not an LLM decomposer. `--all` returns the full de-duplicated menu, ranked by a local trust proxy: use count, known license, and core source.
+
+The router returns `native` when the host already has the skill, `inject` when it can use a source or core body, `suggest` when ambiguous, and `none` when no match is safe. Search applies a greedy description-similarity filter so near-duplicate results do not fill the list. The primary automatic path is still MCP. `ajia-router` is the manual fallback.
 
 ## Remote backends
 
@@ -209,8 +233,11 @@ Promotion rules:
 | `ajia catalog build` | Rebuild the catalog from enabled sources. |
 | `ajia catalog stats` | Show skill counts and catalog digest. |
 | `ajia search "<query>" --json` | Search the local catalog. |
+| `ajia search "<query>" --all` | Return the full de-duplicated menu, ranked by trust. |
 | `ajia use <id> --json` | Use a skill without installing it. |
 | `ajia route "<task>" --json` | Route a message to one skill, with native-first decisions. |
+| `ajia route "<task>" --gate` | Apply the optional 0-2 LLM gate after retrieval. |
+| `ajia route "<task>" --multi 3` | Compose up to three skills from task clauses. |
 | `ajia generated [--json]` | List generated and foundry candidates. |
 | `ajia profile list/show/use` | Inspect or switch local profiles. |
 | `ajia foundry init/sync/list` | Manage the cross-agent foundry. |

@@ -77,17 +77,20 @@ def main() -> int:
     if args.host == "hermes" and turn_id and state.get(session_id) == str(turn_id):
         return 0
 
+    command = [
+        sys.executable,
+        str(AJIA),
+        "route",
+        prompt,
+        "--json",
+        "--host",
+        args.host,
+    ]
+    if os.environ.get("AJIA_GATE_URL"):
+        command.append("--gate")
     try:
         result = subprocess.run(
-            [
-                sys.executable,
-                str(AJIA),
-                "route",
-                prompt,
-                "--json",
-                "--host",
-                args.host,
-            ],
+            command,
             capture_output=True,
             text=True,
             timeout=2.0,

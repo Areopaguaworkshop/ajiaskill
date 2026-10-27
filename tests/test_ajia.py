@@ -151,6 +151,42 @@ class AjiaTest(unittest.TestCase):
         self.assertEqual(results[0]["name"], "alpha")
         self.assertIn("fixture", results[0]["id"])
 
+    def test_search_full_menu(self) -> None:
+        self.run_cli("catalog", "build")
+        found = self.run_cli("search", "all", "--all", "--source", "fixture", "--json")
+        self.assertEqual(found.returncode, 0, found.stderr)
+        results = json.loads(found.stdout)
+        self.assertEqual(len(results), 5)
+        self.assertIn("trust", results[0])
+
+    def test_route_multi_composes_skills(self) -> None:
+        self.run_cli("catalog", "build")
+        routed = self.run_cli(
+            "route",
+            "review this PR and deploy this service",
+            "--multi",
+            "2",
+            "--json",
+        )
+        self.assertEqual(routed.returncode, 0, routed.stderr)
+        result = json.loads(routed.stdout)
+        self.assertEqual(result["decision"], "inject")
+        self.assertEqual(
+            [item["id"] for item in result["skills"]],
+            ["fixture/alpha", "fixture/beta"],
+        )
+
+    def test_route_gate_falls_back_without_endpoint(self) -> None:
+        self.run_cli("catalog", "build")
+        routed = self.run_cli(
+            "route", "review this PR", "--gate", "--json", "--no-body"
+        )
+        self.assertEqual(routed.returncode, 0, routed.stderr)
+        result = json.loads(routed.stdout)
+        self.assertEqual(result["decision"], "inject")
+        self.assertEqual(result["selected"]["id"], "fixture/alpha")
+        self.assertEqual(result["gate"]["used"], False)
+
     def test_search_falls_back_when_embeddings_fail(self) -> None:
         self.run_cli("catalog", "build")
         found = self.run_cli(
