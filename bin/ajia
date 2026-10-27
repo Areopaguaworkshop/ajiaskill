@@ -1177,7 +1177,7 @@ def search_catalog(
     # Body-aware rerank: fuse the lexical order with a full-body BM25 order
     # using Reciprocal Rank Fusion. Metadata-only search misses skills whose
     # name and description are terse but whose body carries the procedure.
-    pool_size = min(len(scored), max(12, limit * 4))
+    pool_size = min(len(scored), max(20, limit * 4))
     pool = scored[:pool_size]
     rest = scored[pool_size:]
     if len(pool) > 1:
