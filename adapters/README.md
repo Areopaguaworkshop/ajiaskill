@@ -51,7 +51,7 @@ Add a `UserPromptSubmit` hook in `~/.codex/hooks.json`:
           {
             "type": "command",
             "command": "/home/ajiap/project/ajiaskill/bin/ajia-hook --host codex",
-            "timeout": 3,
+            "timeout": 6,
             "additionalContextLimit": 0
           }
         ]
@@ -96,7 +96,7 @@ Add a shell hook in `~/.hermes/config.yaml`:
 hooks:
   pre_llm_call:
     - command: "/home/ajiap/project/ajiaskill/bin/ajia-hook --host hermes"
-      timeout: 3
+      timeout: 6
 ```
 
 Hermes adds the returned context to the current user turn.

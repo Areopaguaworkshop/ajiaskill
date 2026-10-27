@@ -93,7 +93,7 @@ def main() -> int:
             command,
             capture_output=True,
             text=True,
-            timeout=2.0,
+            timeout=5.0,
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired):

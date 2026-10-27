@@ -712,6 +712,15 @@ def skill_body(record: dict[str, Any], max_chars: int = 16000) -> str:
         return ""
 
 
+def body_payload(record: dict[str, Any]) -> dict[str, Any]:
+    path = Path(str(record.get("source_path", ""))) / "SKILL.md"
+    return {
+        "body": path.read_text(encoding="utf-8"),
+        "base_dir": str(path.parent),
+        "content_hash": record.get("content_hash"),
+    }
+
+
 EMBEDDING_CACHE_SCHEMA = 1
 
 
@@ -1668,11 +1677,11 @@ def route_skill(
     )
     if decision == "inject" and include_body:
         try:
-            used = use_skill(home, top["record"]["id"], agent="router", quiet=True, host=host)
-            result["body"] = used["body"]
-            result["base_dir"] = used["base_dir"]
-            result["content_hash"] = used["content_hash"]
-        except SkillError as exc:
+            payload = body_payload(top["record"])
+            result["body"] = payload["body"]
+            result["base_dir"] = payload["base_dir"]
+            result["content_hash"] = payload["content_hash"]
+        except OSError as exc:
             result["decision"] = "suggest"
             result["selected"] = None
             result["reason"] = f"body unavailable: {exc}"
@@ -1751,19 +1760,14 @@ def cmd_route(home: Path, args: argparse.Namespace) -> int:
                     )
                     if not args.no_body:
                         try:
-                            used = use_skill(
-                                home,
-                                gate_ids[0],
-                                agent="gate",
-                                quiet=True,
-                                host=args.host,
-                            )
+                            record = resolve_skill(home, gate_ids[0], quiet=True)
+                            payload = body_payload(record)
                             result.update(
-                                body=used["body"],
-                                base_dir=used["base_dir"],
-                                content_hash=used["content_hash"],
+                                body=payload["body"],
+                                base_dir=payload["base_dir"],
+                                content_hash=payload["content_hash"],
                             )
-                        except SkillError as exc:
+                        except (OSError, SkillError) as exc:
                             result["gate"]["error"] = str(exc)
                             result.update(body=None, base_dir=None)
     if args.json:

@@ -23,7 +23,7 @@ async function route(message) {
   const { stdout } = await execFileAsync(
     process.env.AJIA_BIN || "ajia",
     ["route", message, "--json", "--host", "opencode"],
-    { timeout: 2000, maxBuffer: 1024 * 1024 },
+    { timeout: 5000, maxBuffer: 1024 * 1024 },
   );
   return JSON.parse(stdout);
 }

@@ -16,4 +16,12 @@ Keep one scenario per skill. Add a scenario only when a real failure appears.
 python3 scripts/eval-routing.py --verbose
 ```
 
-It reports Hit@1, MRR, inject precision, false-positive rate, and decision accuracy. This is a regression set, not a held-out benchmark. Add a case when a real miss appears; do not tune only to the file.
+It reports Hit@1, MRR, inject precision, false-positive rate, decision accuracy, p50/p95 latency, and average injected context tokens. This is a regression set, not a held-out benchmark. Add a case when a real miss appears; do not tune only to the file.
+
+`routing-heldout.jsonl` is a 30-case unseen probe. Run it with body measurement:
+
+```bash
+python3 scripts/eval-routing.py --cases evals/routing-heldout.jsonl --body --verbose
+```
+
+Do not tune on the held-out file. Use it to measure generalization, then add only genuinely new failures to the regression set.

@@ -13,6 +13,7 @@ import argparse
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -20,33 +21,37 @@ BIN = ROOT / "bin" / "ajia"
 CASES = ROOT / "evals" / "routing-cases.jsonl"
 
 
-def load_cases() -> list[dict[str, str]]:
+def load_cases(path: Path) -> list[dict[str, str]]:
     cases: list[dict[str, str]] = []
-    for lineno, line in enumerate(CASES.read_text(encoding="utf-8").splitlines(), 1):
+    for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         line = line.strip()
         if not line or line.startswith("#"):
             continue
         try:
             item = json.loads(line)
         except json.JSONDecodeError as exc:
-            raise SystemExit(f"{CASES}:{lineno}: {exc}") from exc
+            raise SystemExit(f"{path}:{lineno}: {exc}") from exc
         if not item.get("query") or not item.get("skill"):
-            raise SystemExit(f"{CASES}:{lineno}: query and skill are required")
+            raise SystemExit(f"{path}:{lineno}: query and skill are required")
         cases.append(item)
     return cases
 
 
-def route(query: str, host: str | None) -> dict:
-    cmd = [sys.executable, str(BIN), "route", query, "--json", "--no-body"]
+def route(query: str, host: str | None, include_body: bool = False) -> tuple[dict, float]:
+    cmd = [sys.executable, str(BIN), "route", query, "--json"]
+    if not include_body:
+        cmd.append("--no-body")
     if host:
         cmd.extend(["--host", host])
+    started = time.perf_counter()
     proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    elapsed_ms = (time.perf_counter() - started) * 1000
     if proc.returncode != 0:
-        return {"decision": "error", "selected": None, "candidates": [], "error": proc.stderr.strip()}
+        return {"decision": "error", "selected": None, "candidates": [], "error": proc.stderr.strip()}, elapsed_ms
     try:
-        return json.loads(proc.stdout)
+        return json.loads(proc.stdout), elapsed_ms
     except json.JSONDecodeError:
-        return {"decision": "error", "selected": None, "candidates": [], "error": proc.stdout.strip()}
+        return {"decision": "error", "selected": None, "candidates": [], "error": proc.stdout.strip()}, elapsed_ms
 
 
 def main() -> int:
@@ -54,9 +59,15 @@ def main() -> int:
     parser.add_argument("--host", default="")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--verbose", action="store_true")
+    parser.add_argument("--body", action="store_true", help="Measure injected body tokens.")
+    parser.add_argument(
+        "--cases",
+        default=str(CASES),
+        help="JSONL case file (default: evals/routing-cases.jsonl).",
+    )
     args = parser.parse_args()
 
-    cases = load_cases()
+    cases = load_cases(Path(args.cases))
     rows: list[dict] = []
     hits = 0
     reciprocal = 0.0
@@ -67,7 +78,9 @@ def main() -> int:
 
     for case in cases:
         expected = case["skill"]
-        result = route(case["query"], args.host or None)
+        result, elapsed_ms = route(
+            case["query"], args.host or None, include_body=args.body
+        )
         selected = result.get("selected") or {}
         selected_name = selected.get("name") or ""
         selected_id = selected.get("id") or ""
@@ -99,11 +112,19 @@ def main() -> int:
                 "rank": rank,
                 "confidence": result.get("confidence"),
                 "margin": result.get("margin"),
+                "latency_ms": round(elapsed_ms, 1),
+                "context_tokens": len(str(result.get("body") or "")) // 4,
                 "error": result.get("error"),
             }
         )
 
     total = len(rows)
+    latencies = sorted(row["latency_ms"] for row in rows)
+    p50 = latencies[len(latencies) // 2] if latencies else 0.0
+    p95 = latencies[min(len(latencies) - 1, int(len(latencies) * 0.95))] if latencies else 0.0
+    context_tokens = (
+        sum(row["context_tokens"] for row in rows) / total if total else 0.0
+    )
     summary = {
         "cases": total,
         "hit_at_1": round(hits / total, 3) if total else 0.0,
@@ -111,6 +132,9 @@ def main() -> int:
         "inject_precision": round(inject_correct / inject_count, 3) if inject_count else 0.0,
         "false_positive_rate": round((inject_count - inject_correct) / inject_count, 3) if inject_count else 0.0,
         "none_accuracy": round(none_correct / none_expected, 3) if none_expected else 1.0,
+        "p50_latency_ms": round(p50, 1),
+        "p95_latency_ms": round(p95, 1),
+        "avg_context_tokens": round(context_tokens, 1),
     }
 
     if args.json:

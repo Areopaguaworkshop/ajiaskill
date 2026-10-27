@@ -2,11 +2,12 @@
 
 A local skill platform for coding agents. One catalog, one CLI, one MCP server, and a silent router. Find a source skill, use it without installing it, and promote it only after a safety gate.
 
-Status: **Phase 3b: foundry, profiles, and Hermes-generated metadata.** Catalog, search/use, MCP, safety, promotion, rollback, native inventory, remote source add, cross-agent foundry, profiles, and generated-skill metadata exist. MCP is the default automatic trigger. Host hooks are reference-only and are not installed.
+Status: **Phase 3b: foundry, profiles, and Hermes-generated metadata.** Catalog, search/use, MCP, safety, promotion, rollback, native inventory, remote source add, cross-agent foundry, profiles, and generated-skill metadata exist. Intent-based selection, native-first routing, body and optional dense retrieval, an optional 0-2 gate, and reference hooks exist. MCP is the default trigger. Hooks are optional and are not enabled by the installer.
 
 ## What it does
 
 - **Catalog:** indexes `SKILL.md` files from local and git sources.
+- **Intent-based selection:** the user states the task, not a skill name. The host reads the message; native descriptions, the MCP trigger policy, and `ajia_search` / `ajia_use` select the skill. `ajia route --gate` adds an optional 0-2 model gate; a hook can make the choice deterministic.
 - **Search:** ranks by name, description, path, and use count, then reranks the top candidates with a full-body BM25 pass and RRF. Duplicate names keep the core copy.
 - **Use:** copies the exact bytes to a read-only store and returns the full `SKILL.md` to the agent. Use it in place; copying it into a host skill directory is installation.
 - **MCP (default):** the `ajiaskill` server exposes `ajia_search` and `ajia_use` as tools. The agent calls them when no native or core skill fits.
@@ -20,6 +21,18 @@ Status: **Phase 3b: foundry, profiles, and Hermes-generated metadata.** Catalog,
 - **Foundry:** writes cross-agent candidates under `~/.ajia/foundry`, and indexes Hermes `/learn` skills as candidates.
 - **Profiles:** sources, hosts, routing thresholds, and safety policy per profile.
 - **Generated metadata:** Hermes `created_by` and curator state, plus foundry candidates, appear in the catalog.
+
+## Intent-based selection
+
+You do not name a skill. State the task. The host reads the message and chooses.
+
+1. **Native first:** `install.sh` puts core skills in host roots. The host loads their descriptions and may use one directly.
+2. **Policy:** the MCP server sends an intent map in its `initialize` response.
+3. **Search fallback:** when no native skill clearly fits, the host calls `ajia_search`, then `ajia_use`.
+4. **Optional gate:** `ajia route --gate` asks a model to select 0-2 candidates from the retrieved set.
+5. **Deterministic path:** `ajia route` or a host hook can inject one skill on every matching turn.
+
+MCP is the tool surface, not the chooser. It never reads the user message. The host and model decide. If no candidate is safe, the correct result is `none`.
 
 ## Quick start
 
@@ -183,11 +196,11 @@ The server sends a trigger policy on `initialize`: diagrams and visual explainer
 
 Start a new host session to load `ajia_search` and `ajia_use` if they are not visible yet.
 
-## Host adapters (reference only)
+## Host adapters (optional)
 
-Hooks are **not installed**. MCP is the default.
+MCP is the default. Hooks are optional and the installer does not enable them.
 
-`bin/ajia-hook` and `adapters/` remain as reference code for a future deterministic mode. If you enable them later, they fail open on timeout or error. See `adapters/README.md` for the per-host caveats.
+`bin/ajia-hook` supports Codex, Claude, and Hermes. `adapters/` holds reference adapters for Pi, OMP, and OpenCode. Hooks call `ajia route` and fail open on timeout, error, low confidence, or an empty body. OpenCode stays on MCP until its adapter migration is stable. See `adapters/README.md` for the per-host caveats and config snippets.
 
 ## Safety stack
 
@@ -367,6 +380,7 @@ install.sh
 python3 -m unittest discover -s tests -v
 python3 scripts/validate-skills.py
 python3 scripts/eval-routing.py --verbose
+python3 scripts/eval-routing.py --cases evals/routing-heldout.jsonl --body --verbose
 scripts/test_mcp_hosts.py
 ./install.sh --check
 ```

@@ -7,7 +7,7 @@ export default function (pi: any) {
       const result = await pi.exec(
         process.env.AJIA_BIN || "ajia",
         ["route", event.prompt, "--json", "--host", "omp"],
-        { timeout: 2000 },
+        { timeout: 5000 },
       );
       const parsed = JSON.parse(result.stdout || "{}");
       if (parsed.decision !== "inject" || !parsed.body) return;
