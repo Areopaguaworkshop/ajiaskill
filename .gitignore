@@ -50,3 +50,7 @@ pnpm-debug.log*
 *.log
 *.tgz
 docs/diagrams/*.visual-check.*
+docs/diagrams/*.finalize*.json
+docs/diagrams/*.browser-check*.json
+docs/diagrams/*.delivery*.json
+docs/diagrams/*.visual/
