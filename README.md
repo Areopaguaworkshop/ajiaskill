@@ -44,7 +44,7 @@ python3 bin/ajia use <id>
 python3 bin/ajia route "review this PR" --json --host opencode
 ```
 
-`source sync` indexes the two enabled local sources: `ajia-core` (this repo) and `hermes` (`~/.hermes/skills`). The 24 remote sources are configured but off by default.
+`source sync` indexes the local `ajia-core` source and the foundry. Hermes (`~/.hermes/skills`) is configured but off by default; enable it only if you use Hermes. The 24 remote sources are also off by default.
 
 ## npm
 
@@ -72,6 +72,10 @@ Enable a remote source when you need it:
 ```bash
 python3 bin/ajia source enable pstack
 python3 bin/ajia source sync pstack
+
+# Hermes is optional; enable it only when you use Hermes.
+python3 bin/ajia source enable hermes
+python3 bin/ajia source sync hermes
 ```
 
 ## Router (optional)

@@ -179,6 +179,26 @@ class AjiaTest(unittest.TestCase):
         results = json.loads(found.stdout)
         self.assertEqual(results[0]["name"], "nested-alpha")
 
+    def test_init_defaults_to_minimal_sources(self) -> None:
+        home = Path(self.tmp.name) / "minimal-home"
+        result = self.run_cli("--home", str(home), "init")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        text = (home / "sources.yaml").read_text(encoding="utf-8")
+        self.assertIn(
+            '  - id: "ajia-core"\n'
+            '    type: "local"\n'
+            '    path: "skills"\n'
+            '    enabled: true',
+            text,
+        )
+        self.assertIn(
+            '  - id: "hermes"\n'
+            '    type: "local"\n'
+            '    path: "~/.hermes/skills"\n'
+            '    enabled: false',
+            text,
+        )
+
     def test_search_full_menu(self) -> None:
         self.run_cli("catalog", "build")
         found = self.run_cli("search", "all", "--all", "--source", "fixture", "--json")

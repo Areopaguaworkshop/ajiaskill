@@ -23,7 +23,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-VERSION = "0.1.4"
+VERSION = "0.1.5"
 REPO_ROOT = Path(__file__).resolve().parent.parent
 POLICY = (
     "Prefer an installed native skill when it matches. Core triggers: "
@@ -119,7 +119,7 @@ def ensure_dirs(home: Path) -> None:
 def default_sources() -> list[dict[str, Any]]:
     return [
         {"id": "ajia-core", "type": "local", "path": "skills", "enabled": True},
-        {"id": "hermes", "type": "local", "path": "~/.hermes/skills", "enabled": True},
+        {"id": "hermes", "type": "local", "path": "~/.hermes/skills", "enabled": False},
         {"id": "agents", "type": "local", "path": "~/.agents/skills", "enabled": False},
         {"id": "pstack", "type": "git", "url": "https://github.com/backnotprop/pstack.git", "ref": "main", "enabled": False},
         {"id": "archify", "type": "git", "url": "https://github.com/tt-a1i/archify.git", "ref": "main", "enabled": False},
