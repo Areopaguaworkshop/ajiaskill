@@ -1,13 +1,14 @@
 # ajiaskill
 
-A local skill platform for coding agents. One catalog, one CLI, one MCP server, and a silent router. Find a source skill, use it without installing it, and promote it only after a safety gate.
+A local skill platform for coding agents. State the feature or task; the host detects the right core skill and ajiaskill serves it. One catalog, one personal profile, one MCP server, and six hosts share the same setup.
 
-Status: **Phase 3b: foundry, profiles, and Hermes-generated metadata.** Catalog, search/use, MCP, safety, promotion, rollback, native inventory, remote source add, cross-agent foundry, profiles, and generated-skill metadata exist. Intent-based selection, native-first routing, body and optional dense retrieval, an optional 0-2 gate, and reference hooks exist. MCP is the default trigger. Hooks are optional and are not enabled by the installer.
+Status: **Phase 3b: foundry, profiles, and Hermes-generated metadata.** Catalog, search/use, MCP, safety, promotion, rollback, native inventory, remote source add, cross-agent foundry, profiles, and generated-skill metadata exist. Automatic skill detection, native-first routing, body and optional dense retrieval, an optional 0-2 gate, reference hooks, and one personal profile across six hosts exist. MCP is the default trigger. Hooks are optional and are not enabled by the installer.
 
 ## What it does
 
+- **Automatic skill detection:** the user states the task or feature, not a skill name. The host reads it; native descriptions, the MCP trigger policy, and `ajia_search` / `ajia_use` select the skill. `ajia route --gate` adds an optional 0-2 model gate; a hook can make the choice deterministic.
+- **Unified personal settings:** one `~/.ajia` home and one profile control sources, hosts, routing thresholds, and safety policy across all six hosts. Core skills are the shared baseline; switching profiles does not reinstall them.
 - **Catalog:** indexes `SKILL.md` files from local and git sources.
-- **Intent-based selection:** the user states the task, not a skill name. The host reads the message; native descriptions, the MCP trigger policy, and `ajia_search` / `ajia_use` select the skill. `ajia route --gate` adds an optional 0-2 model gate; a hook can make the choice deterministic.
 - **Search:** ranks by name, description, path, and use count, then reranks the top candidates with a full-body BM25 pass and RRF. Duplicate names keep the core copy.
 - **Use:** copies the exact bytes to a read-only store and returns the full `SKILL.md` to the agent. Use it in place; copying it into a host skill directory is installation.
 - **MCP (default):** the `ajiaskill` server exposes `ajia_search` and `ajia_use` as tools. The agent calls them when no native or core skill fits.
@@ -19,12 +20,12 @@ Status: **Phase 3b: foundry, profiles, and Hermes-generated metadata.** Catalog,
 - **Promote:** manual, gated, backed up, and recorded in a lock file.
 - **Sandbox:** prints a no-network, read-only Docker command for source scripts.
 - **Foundry:** writes cross-agent candidates under `~/.ajia/foundry`, and indexes Hermes `/learn` skills as candidates.
-- **Profiles:** sources, hosts, routing thresholds, and safety policy per profile.
+- **Profiles:** one personal profile controls sources, hosts, routing thresholds, and safety policy across every host.
 - **Generated metadata:** Hermes `created_by` and curator state, plus foundry candidates, appear in the catalog.
 
-## Intent-based selection
+## Automatic skill detection
 
-You do not name a skill. State the task. The host reads the message and chooses.
+You describe the feature or task. You do not name a skill, and you do not wire a command per feature. The host reads the message and detects the skill while you use its features normally.
 
 1. **Native first:** `install.sh` puts core skills in host roots. The host loads their descriptions and may use one directly.
 2. **Policy:** the MCP server sends an intent map in its `initialize` response.
@@ -33,6 +34,18 @@ You do not name a skill. State the task. The host reads the message and chooses.
 5. **Deterministic path:** `ajia route` or a host hook can inject one skill on every matching turn.
 
 MCP is the tool surface, not the chooser. It never reads the user message. The host and model decide. If no candidate is safe, the correct result is `none`.
+
+## Unified personal settings
+
+One `~/.ajia` home is shared by every host:
+
+- `profiles.json` controls sources, hosts, routing thresholds, and safety policy.
+- `hosts.json` maps the skill roots for OpenCode, Pi, OMP, Codex, Hermes, and Claude.
+- `routing.json` and the core skills provide one selection baseline.
+- `install.sh` links the same core skills into the host roots.
+- `ajia profile use work` switches the personal policy without reinstalling anything.
+
+The result is one personal setup, not six independent skill collections. The core skills stay the same; the profile changes what is visible, how routing behaves, and which safety rules apply.
 
 ## Quick start
 
