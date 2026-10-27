@@ -151,6 +151,34 @@ class AjiaTest(unittest.TestCase):
         self.assertEqual(results[0]["name"], "alpha")
         self.assertIn("fixture", results[0]["id"])
 
+    def test_skill_under_node_modules_is_indexed(self) -> None:
+        root = Path(self.tmp.name) / "node_modules" / "fixture" / "skills"
+        skill = root / "nested-alpha"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            "---\n"
+            "name: nested-alpha\n"
+            "description: Nested alpha skill for npm installs.\n"
+            "license: MIT\n"
+            "---\n\n"
+            "# Nested alpha\n",
+            encoding="utf-8",
+        )
+        (self.home / "sources.yaml").write_text(
+            "sources:\n"
+            "  - id: fixture\n"
+            f"    type: local\n"
+            f"    path: {json.dumps(str(root))}\n"
+            "    enabled: true\n",
+            encoding="utf-8",
+        )
+        built = self.run_cli("catalog", "build")
+        self.assertEqual(built.returncode, 0, built.stderr)
+        found = self.run_cli("search", "nested", "--json")
+        self.assertEqual(found.returncode, 0, found.stderr)
+        results = json.loads(found.stdout)
+        self.assertEqual(results[0]["name"], "nested-alpha")
+
     def test_search_full_menu(self) -> None:
         self.run_cli("catalog", "build")
         found = self.run_cli("search", "all", "--all", "--source", "fixture", "--json")

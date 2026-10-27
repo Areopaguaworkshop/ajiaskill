@@ -23,7 +23,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-VERSION = "0.1.3"
+VERSION = "0.1.4"
 REPO_ROOT = Path(__file__).resolve().parent.parent
 POLICY = (
     "Prefer an installed native skill when it matches. Core triggers: "
@@ -305,7 +305,13 @@ def iter_skill_dirs(source_root: Path) -> list[Path]:
     if not source_root.is_dir():
         return result
     for skill_md in source_root.rglob("SKILL.md"):
-        if any(part in SKIP_DIRS for part in skill_md.parts):
+        try:
+            relative = skill_md.relative_to(source_root)
+        except ValueError:
+            relative = skill_md
+        # Check skip directories relative to the source root. A global npm
+        # install lives under node_modules, which must not hide its own skills.
+        if any(part in SKIP_DIRS for part in relative.parts):
             continue
         if skill_md.is_symlink():
             continue
