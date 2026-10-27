@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -562,7 +563,9 @@ class AjiaTest(unittest.TestCase):
 
     def test_mcp_protocol(self) -> None:
         self.run_cli("catalog", "build")
-        env = dict(os.environ, AJIA_HOME=str(self.home))
+        env = dict(
+            os.environ, AJIA_HOME=str(self.home), AJIA_AUTO_UPDATE="0"
+        )
         proc = subprocess.Popen(
             [sys.executable, str(BIN), "mcp"],
             stdin=subprocess.PIPE,
@@ -601,6 +604,151 @@ class AjiaTest(unittest.TestCase):
         payload = json.loads(replies[2]["result"]["content"][0]["text"])
         self.assertEqual(payload[0]["name"], "alpha")
         self.assertFalse(replies[2]["result"]["isError"])
+
+
+    def start_registry(self, version: str) -> str:
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:
+                body = json.dumps(
+                    {"name": "ajiaskill", "dist-tags": {"latest": version}}
+                ).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args) -> None:
+                return
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return f"http://127.0.0.1:{server.server_port}/latest"
+
+    def current_version(self) -> str:
+        match = re.search(r'^VERSION = "([^"]+)"', BIN.read_text(encoding="utf-8"), re.M)
+        assert match is not None
+        return match.group(1)
+
+    def test_update_check_reports_available_without_applying(self) -> None:
+        url = self.start_registry("99.0.0")
+        result = self.run_cli(
+            "update",
+            "--check",
+            "--json",
+            env_overrides={
+                "AJIA_UPDATE_REGISTRY": url,
+                "AJIA_AUTO_UPDATE": "0",
+                "AJIA_UPDATE_DRY_RUN": "0",
+            },
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["status"], "available")
+        self.assertEqual(payload["latest"], "99.0.0")
+        self.assertEqual(payload["current"], self.current_version())
+        self.assertFalse(payload["applied"])
+        self.assertIn("git", payload["command"])
+
+    def test_update_reports_current_when_registry_matches(self) -> None:
+        url = self.start_registry(self.current_version())
+        result = self.run_cli(
+            "update",
+            "--check",
+            "--json",
+            env_overrides={"AJIA_UPDATE_REGISTRY": url, "AJIA_AUTO_UPDATE": "0"},
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["status"], "current")
+        self.assertFalse(payload["applied"])
+
+    def test_update_uses_cache_when_registry_is_down(self) -> None:
+        url = self.start_registry("99.0.0")
+        first = self.run_cli(
+            "update",
+            "--check",
+            "--json",
+            env_overrides={"AJIA_UPDATE_REGISTRY": url, "AJIA_AUTO_UPDATE": "0"},
+        )
+        self.assertEqual(json.loads(first.stdout)["status"], "available")
+        offline = self.run_cli(
+            "update",
+            "--check",
+            "--json",
+            env_overrides={
+                "AJIA_UPDATE_REGISTRY": "http://127.0.0.1:9/latest",
+                "AJIA_AUTO_UPDATE": "0",
+            },
+        )
+        self.assertEqual(offline.returncode, 0, offline.stderr)
+        self.assertEqual(json.loads(offline.stdout)["latest"], "99.0.0")
+        self.assertTrue((self.home / "update-check.json").exists())
+
+    def test_update_dry_run_does_not_execute(self) -> None:
+        url = self.start_registry("99.0.0")
+        result = self.run_cli(
+            "update",
+            "--json",
+            env_overrides={
+                "AJIA_UPDATE_REGISTRY": url,
+                "AJIA_UPDATE_DRY_RUN": "1",
+                "AJIA_AUTO_UPDATE": "0",
+            },
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["status"], "available")
+        self.assertFalse(payload["applied"])
+
+    def test_catalog_rebuilds_when_manifest_version_is_older(self) -> None:
+        built = self.run_cli("catalog", "build")
+        self.assertEqual(built.returncode, 0, built.stderr)
+        manifest_path = self.home / "catalog" / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["version"] = "0.0.0"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        found = self.run_cli("search", "ui", "--json")
+        self.assertEqual(found.returncode, 0, found.stderr)
+        rebuilt = json.loads(manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual(rebuilt["version"], self.current_version())
+
+    def test_mcp_announces_available_update(self) -> None:
+        url = self.start_registry("99.0.0")
+        self.run_cli("catalog", "build")
+        env = dict(
+            os.environ,
+            AJIA_HOME=str(self.home),
+            AJIA_UPDATE_REGISTRY=url,
+            AJIA_UPDATE_DRY_RUN="1",
+        )
+        env.pop("AJIA_AUTO_UPDATE", None)
+        proc = subprocess.Popen(
+            [sys.executable, str(BIN), "mcp"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env,
+        )
+        assert proc.stdin is not None
+        assert proc.stdout is not None
+        proc.stdin.write(
+            json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+            + "\n"
+        )
+        proc.stdin.flush()
+        reply = json.loads(proc.stdout.readline())
+        proc.terminate()
+        proc.wait(timeout=5)
+        for pipe in (proc.stdin, proc.stdout, proc.stderr):
+            if pipe and not pipe.closed:
+                pipe.close()
+        instructions = reply["result"]["instructions"]
+        self.assertIn("99.0.0", instructions)
+        self.assertIn("ajia update", instructions)
 
 
 if __name__ == "__main__":

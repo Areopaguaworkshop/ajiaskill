@@ -23,7 +23,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-VERSION = "0.1.5"
+VERSION = "0.1.6"
 REPO_ROOT = Path(__file__).resolve().parent.parent
 POLICY = (
     "Prefer an installed native skill when it matches. Core triggers: "
@@ -361,6 +361,243 @@ def sync_git_source(source: dict[str, Any], home: Path, refresh: bool = False) -
     return "cloned"
 
 
+UPDATE_CHECK_SCHEMA = 1
+UPDATE_CHECK_TTL_HOURS = 24
+UPDATE_REGISTRY_URL = "https://registry.npmjs.org/ajiaskill/latest"
+UPDATE_TIMEOUT_SECONDS = 2.0
+PACKAGE_NAME = "ajiaskill"
+
+
+def parse_version(value: str) -> tuple[int, ...] | None:
+    text = str(value or "").strip().lstrip("v")
+    if not text:
+        return None
+    text = re.split(r"[-+]", text, maxsplit=1)[0]
+    parts = text.split(".")
+    if not parts or any(not part.isdigit() for part in parts):
+        return None
+    return tuple(int(part) for part in parts)
+
+
+def version_is_newer(candidate: str, current: str) -> bool:
+    left = parse_version(candidate)
+    right = parse_version(current)
+    if left is None or right is None:
+        return False
+    width = max(len(left), len(right))
+    padded_left = left + (0,) * (width - len(left))
+    padded_right = right + (0,) * (width - len(right))
+    return padded_left > padded_right
+
+
+def update_cache_path(home: Path) -> Path:
+    return home / "update-check.json"
+
+
+def update_cache(home: Path) -> dict[str, Any]:
+    data = read_json(update_cache_path(home), {})
+    return data if isinstance(data, dict) else {}
+
+
+def fresh_timestamp(value: Any) -> bool:
+    try:
+        stamp = datetime.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return False
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    age = datetime.now(timezone.utc) - stamp
+    return timedelta(0) <= age < timedelta(hours=UPDATE_CHECK_TTL_HOURS)
+
+
+def cached_latest_version(home: Path) -> str | None:
+    data = update_cache(home)
+    if data.get("schema") != UPDATE_CHECK_SCHEMA:
+        return None
+    latest = data.get("latest")
+    if not latest or not fresh_timestamp(data.get("checked_at")):
+        return None
+    return str(latest)
+
+
+def update_cache_set(home: Path, **values: Any) -> None:
+    data = update_cache(home)
+    data.update(values)
+    data["schema"] = UPDATE_CHECK_SCHEMA
+    write_json(update_cache_path(home), data)
+
+
+def fetch_latest_version(timeout: float | None = None) -> str | None:
+    url = os.environ.get("AJIA_UPDATE_REGISTRY", "").strip() or UPDATE_REGISTRY_URL
+    try:
+        request = Request(
+            safe_http_url(url),
+            headers={"User-Agent": f"ajia/{VERSION}", "Accept": "application/json"},
+        )
+        with urlopen(request, timeout=timeout or UPDATE_TIMEOUT_SECONDS) as response:
+            payload = json.loads(response.read(256_000).decode("utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    latest = payload.get("version") or (payload.get("dist-tags") or {}).get("latest")
+    return str(latest) if latest else None
+
+
+def install_mode(root: Path | None = None) -> str:
+    root = root or REPO_ROOT
+    if "node_modules" in root.parts:
+        return "npm"
+    if (root / ".git").exists():
+        return "git"
+    return "unknown"
+
+
+def update_command(mode: str, root: Path | None = None) -> list[str] | None:
+    root = root or REPO_ROOT
+    if mode == "npm":
+        return ["npm", "install", "-g", f"{PACKAGE_NAME}@latest"]
+    if mode == "git":
+        return ["git", "-C", str(root), "pull", "--ff-only"]
+    return None
+
+
+def command_text(command: list[str] | None) -> str:
+    return " ".join(shlex.quote(part) for part in command) if command else ""
+
+
+def apply_update(
+    mode: str, root: Path | None = None
+) -> tuple[bool, str]:
+    command = update_command(mode, root)
+    if not command:
+        return False, f"unsupported install layout: {root or REPO_ROOT}"
+    if shutil.which(command[0]) is None:
+        return False, f"{command[0]} not found on PATH"
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
+    except OSError as exc:
+        return False, str(exc)
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip().splitlines()
+        return False, detail[0] if detail else f"{command[0]} exited {result.returncode}"
+    return True, "ok"
+
+
+def rebuild_catalog(home: Path) -> bool:
+    """Re-index with the code now on disk, not the running process."""
+    try:
+        result = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()), "catalog", "build"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return False
+    if result.returncode != 0:
+        try:
+            build_catalog(home, quiet=True)
+        except (OSError, SkillError):
+            return False
+        return True
+    return True
+
+
+def auto_update(
+    home: Path,
+    current: str | None = None,
+    force: bool = False,
+    dry_run: bool | None = None,
+) -> dict[str, Any]:
+    """Check the registry and optionally upgrade in place.
+
+    Returns a status dict; never raises. Statuses: current, available,
+    updated, failed, disabled, unknown.
+    """
+    current = current or VERSION
+    result: dict[str, Any] = {
+        "current": current,
+        "latest": None,
+        "status": "unknown",
+        "mode": install_mode(),
+        "command": command_text(update_command(install_mode())),
+        "applied": False,
+    }
+    try:
+        disabled = os.environ.get("AJIA_AUTO_UPDATE", "1").strip().lower() in {
+            "0",
+            "false",
+            "no",
+            "off",
+        }
+        if disabled and not force:
+            result["status"] = "disabled"
+            return result
+        if dry_run is None:
+            dry_run = os.environ.get("AJIA_UPDATE_DRY_RUN", "").strip() == "1"
+        latest = cached_latest_version(home)
+        if latest is None:
+            latest = fetch_latest_version()
+            if latest:
+                update_cache_set(
+                    home, latest=latest, checked_at=now_iso(), attempted=None
+                )
+        result["latest"] = latest
+        if not latest:
+            return result
+        if not version_is_newer(latest, current):
+            result["status"] = "current"
+            return result
+        result["status"] = "available"
+        if dry_run or not result["command"]:
+            return result
+        cache = update_cache(home)
+        if (
+            not force
+            and cache.get("attempted") == latest
+            and fresh_timestamp(cache.get("attempted_at"))
+        ):
+            result["status"] = "failed"
+            result["message"] = "previous update attempt failed; run: ajia update"
+            return result
+        ok, message = apply_update(result["mode"])
+        update_cache_set(home, attempted=latest, attempted_at=now_iso())
+        if not ok:
+            result["status"] = "failed"
+            result["message"] = message
+            return result
+        rebuild_catalog(home)
+        result["status"] = "updated"
+        result["applied"] = True
+        return result
+    except Exception as exc:  # never break an MCP session over an update check
+        result["status"] = "failed"
+        result["message"] = str(exc)
+        return result
+
+
+def update_notice(result: dict[str, Any]) -> str:
+    status = result.get("status")
+    if status == "updated":
+        return (
+            f" ajiaskill auto-updated {result.get('current')} -> {result.get('latest')}"
+            " and re-indexed the core skills. Restart the MCP server/host to load the"
+            " new code."
+        )
+    if status == "available":
+        return (
+            f" ajiaskill {result.get('current')} -> {result.get('latest')} is available;"
+            " run `ajia update` to upgrade the core skills."
+        )
+    if status == "failed":
+        return (
+            f" ajiaskill update to {result.get('latest')} failed"
+            f" ({result.get('message')}); run `ajia update` manually."
+        )
+    return ""
+
+
 def write_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -661,9 +898,23 @@ def build_catalog(home: Path, quiet: bool = False) -> dict[str, Any]:
     return manifest
 
 
-def load_catalog(home: Path, quiet: bool = False) -> list[dict[str, Any]]:
+def catalog_needs_rebuild(home: Path) -> bool:
     p = paths(home)
     if not p["skills"].exists():
+        return True
+    manifest = read_json(p["manifest"], {})
+    if not isinstance(manifest, dict):
+        return False
+    recordable = parse_version(str(manifest.get("version", "")))
+    current = parse_version(VERSION)
+    if recordable is None or current is None:
+        return False
+    return recordable < current
+
+
+def load_catalog(home: Path, quiet: bool = False) -> list[dict[str, Any]]:
+    p = paths(home)
+    if catalog_needs_rebuild(home):
         build_catalog(home, quiet=quiet)
     try:
         lines = p["skills"].read_text(encoding="utf-8").splitlines()
@@ -1987,6 +2238,11 @@ def cmd_remote_install(home: Path, args: argparse.Namespace) -> int:
     return subprocess.run(cmd, check=False).returncode
 
 def mcp_server(home: Path, host: str | None = None) -> int:
+    update = auto_update(home)
+    notice = update_notice(update)
+    instructions = POLICY + notice
+    if notice and update.get("status") in {"updated", "failed"}:
+        print(f"ajia:{notice}", file=sys.stderr)
     load_catalog(home, quiet=True)
 
     def send(payload: dict[str, Any]) -> None:
@@ -2074,7 +2330,7 @@ def mcp_server(home: Path, host: str | None = None) -> int:
                     "protocolVersion": "2024-11-05",
                     "capabilities": {"tools": {}},
                     "serverInfo": {"name": "ajiaskill", "version": VERSION},
-                    "instructions": POLICY,
+                    "instructions": instructions,
                 },
             )
         elif method == "notifications/initialized":
@@ -2146,6 +2402,28 @@ def mcp_server(home: Path, host: str | None = None) -> int:
         else:
             error(request_id, -32601, f"method not found: {method}")
     return 0
+
+
+def cmd_update(home: Path, args: argparse.Namespace) -> int:
+    result = auto_update(home, force=True, dry_run=True if args.check else None)
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False))
+    elif result["status"] == "current":
+        print(f"ajia {result['current']}: current")
+    elif result["status"] in {"available", "updated"}:
+        verb = "updated to" if result["status"] == "updated" else "->"
+        print(f"ajia {result['current']} {verb} {result['latest']} ({result['mode']})")
+        if result["status"] == "updated":
+            print("core skills re-indexed; restart the MCP server/host to load new code")
+        else:
+            print(f"apply: {result['command']}")
+    elif result["status"] == "failed":
+        print(f"ajia update failed: {result.get('message')}", file=sys.stderr)
+    elif result["status"] == "disabled":
+        print("automatic updates are disabled; run with AJIA_AUTO_UPDATE=1")
+    else:
+        print("version check unavailable (offline or registry error)")
+    return 1 if result["status"] == "failed" else 0
 
 
 def cmd_init(home: Path, args: argparse.Namespace) -> int:
@@ -3121,6 +3399,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("init", help="Create the home directory and default sources.")
     sub.add_parser("status", help="Show catalog status.")
     sub.add_parser("doctor", help="Check the local setup.")
+    update = sub.add_parser("update", help="Check for and apply ajiaskill updates.")
+    update.add_argument("--check", action="store_true", help="Report only; do not apply.")
+    update.add_argument("--json", action="store_true")
     sub.add_parser("policy", help="Print the 2-line trigger policy.")
     mcp_parser = sub.add_parser("mcp", help="Run the stdio MCP server.")
     mcp_parser.add_argument("--host", help="Host id for native-first decisions.")
@@ -3279,6 +3560,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_status(home, args)
         if args.command == "doctor":
             return cmd_doctor(home, args)
+        if args.command == "update":
+            return cmd_update(home, args)
         if args.command == "policy":
             return cmd_policy(home, args)
         if args.command == "mcp":

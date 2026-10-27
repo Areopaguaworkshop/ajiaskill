@@ -213,6 +213,34 @@ The server sends a trigger policy on `initialize`: diagrams and visual explainer
 
 Start a new host session to load `ajia_search` and `ajia_use` if they are not visible yet.
 
+## Updating
+
+Core skills ship inside the package, so updating them means updating `ajiaskill` itself.
+
+```bash
+ajia update --check     # report only
+ajia update             # check, install, and re-index
+npm install -g ajiaskill@latest   # equivalent when installed from npm
+```
+
+`ajia mcp` runs the same check on startup. Within a 24-hour cache window
+(`~/.ajia/update-check.json`) it queries the npm registry; if a newer version
+exists it runs the matching upgrade (`npm install -g ajiaskill@latest` for an
+npm install, `git pull --ff-only` for a checkout), re-indexes the catalog, and
+adds one line to the MCP `initialize` instructions so the agent can tell you.
+The MCP server cannot reload its own Python, so **restart the host** to pick up
+new code; skill bodies and the catalog are already current.
+
+| Control | Effect |
+|---|---|
+| `AJIA_AUTO_UPDATE=0` | Disable the startup check and upgrade. |
+| `AJIA_UPDATE_DRY_RUN=1` | Check and report, never install. |
+| `AJIA_UPDATE_REGISTRY=<url>` | Override the registry endpoint (loopback HTTP allowed). |
+
+Automatic upgrades mean new skill prose is trusted without the scan/promote
+gate. If that trade-off is wrong for you, set `AJIA_AUTO_UPDATE=0` and use
+`ajia scan` / `ajia promote` for reviewed updates.
+
 ## Host adapters (optional)
 
 MCP is the default. Hooks are optional and the installer does not enable them.
@@ -287,6 +315,7 @@ Promotion rules:
 | `ajia policy` | Print the 2-line trigger policy. |
 | `ajia status` | Show sources, skills, and trials. |
 | `ajia doctor` | Check the local setup. |
+| `ajia update [--check] [--json]` | Check the npm registry, apply an upgrade, and re-index. |
 
 ## Foundry and profiles
 

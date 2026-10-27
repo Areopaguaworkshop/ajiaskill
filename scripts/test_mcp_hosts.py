@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -19,6 +20,7 @@ class Client:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            env=dict(os.environ, AJIA_AUTO_UPDATE="0"),
         )
         self.next_id = 1
         init = self.request("initialize", {})
