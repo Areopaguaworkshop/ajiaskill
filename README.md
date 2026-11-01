@@ -365,7 +365,7 @@ A profile selects sources, hosts, router thresholds, and safety policy. The
 default `personal` profile allows every enabled source. The `work` profile is a
 smaller example.
 
-## Learning runtime (M1)
+## Learning runtime (M2)
 
 `ajia review` is the host-neutral engine behind `ajia-learn`. It takes a transcript, or a `--plan` produced by a host model, writes a review-owned foundry candidate, scans it, and then installs to `~/.agents/skills`, quarantines it, or stages it for approval.
 
@@ -376,7 +376,7 @@ ajia learning quarantine list
 ajia learning rollback <slug>
 ```
 
-Automatic learning is enabled by default. `ajia learning pause` stops review and install without removing installed skills. M0 ships the engine, usage ledger, scan, quarantine, backup, ledger, rollback, and immutable core/user guards. M1 adds the OpenCode V2 plugin: install it with `ajia setup opencode-plugin --install` and restart OpenCode. It reviews on `session.execution.succeeded`, uses the session model, reloads learned skills, and injects `~/.ajia/memory` into the context. Claude Code and Codex adapters are next.
+Automatic learning is enabled by default. `ajia learning pause` stops review and install without removing installed skills. M0 ships the engine, usage ledger, scan, quarantine, backup, ledger, rollback, and immutable core/user guards. M1 adds the OpenCode V2 plugin: install it with `ajia setup opencode-plugin --install` and restart OpenCode. M2 adds Claude Code and Codex hooks: `ajia setup claude-hooks --install` or `ajia setup codex-hooks --install`. The hooks review on `Stop`, use the host model, and inject `~/.ajia/memory` on `UserPromptSubmit`. Codex asks you to trust the new hooks in `/hooks`.
 
 ## Native-first
 

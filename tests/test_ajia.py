@@ -961,5 +961,139 @@ class AjiaTest(unittest.TestCase):
 
 
 
+    def run_hook(self, args: list[str], payload: dict, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+        merged = dict(os.environ, AJIA_HOME=str(self.home), AJIA_BIN=str(BIN))
+        if env:
+            merged.update(env)
+        return subprocess.run(
+            [sys.executable, str(HOOK), *args],
+            input=json.dumps(payload),
+            capture_output=True,
+            text=True,
+            env=merged,
+            check=False,
+        )
+
+    def test_hook_injects_memory(self) -> None:
+        (self.home / "memory" / "projects").mkdir(parents=True)
+        (self.home / "memory" / "USER.md").write_text("- Prefer uv over pip.\n", encoding="utf-8")
+        (self.home / "memory" / "projects" / "ajiaskill.md").write_text(
+            "- Tests use unittest.\n", encoding="utf-8"
+        )
+        result = self.run_hook(
+            ["--host", "claude"],
+            {"prompt": "hello", "cwd": str(ROOT)},
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        context = payload["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("Prefer uv over pip", context)
+        self.assertIn("Tests use unittest", context)
+
+    def test_hook_reviews_claude_stop_transcript(self) -> None:
+        transcript = Path(self.tmp.name) / "transcript.jsonl"
+        transcript.write_text(
+            json.dumps(
+                {
+                    "type": "user",
+                    "message": {
+                        "role": "user",
+                        "content": "Remember: always use python3 -m unittest; never use pytest.",
+                    },
+                }
+            )
+            + "\n"
+            + json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {"role": "assistant", "content": [{"type": "text", "text": "Noted."}]},
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        fake = Path(self.tmp.name) / "fake-model.py"
+        fake.write_text(
+            "import json,sys\n"
+            "sys.stdin.read()\n"
+            "print(json.dumps({'action':'create','name':'use-unittest-not-pytest',"
+            "'description':'Use unittest instead of pytest in this repository.',"
+            "'body':'# Use unittest\\n\\nRun `python3 -m unittest` for tests.\\n',"
+            "'license':'MIT','confidence':0.9,'reason':'user preference'}))\n",
+            encoding="utf-8",
+        )
+        install_root = Path(self.tmp.name) / "installed"
+        result = self.run_hook(
+            ["--host", "claude", "--review", "--model-cmd", f"{sys.executable} {fake}"],
+            {
+                "session_id": "s1",
+                "transcript_path": str(transcript),
+                "cwd": str(ROOT),
+                "hook_event_name": "Stop",
+                "stop_hook_active": False,
+            },
+            {"AJIA_LEARNING_INSTALL_ROOT": str(install_root), "AJIA_REVIEW_BUILTIN": "1"},
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), {})
+        self.assertTrue((self.home / "foundry" / "use-unittest-not-pytest" / "SKILL.md").exists())
+        self.assertTrue((install_root / "ajia-use-unittest-not-pytest" / "SKILL.md").exists())
+
+
+
+    def test_hook_reviews_codex_transcript(self) -> None:
+        transcript = Path(self.tmp.name) / "codex.jsonl"
+        transcript.write_text(
+            json.dumps({"type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "Use uv, not pip."}]}})
+            + "\n"
+            + json.dumps({"type": "event_msg", "payload": {"type": "agent_message", "message": "Noted."}})
+            + "\n",
+            encoding="utf-8",
+        )
+        fake = Path(self.tmp.name) / "fake-model.py"
+        fake.write_text(
+            "import json,sys\n"
+            "sys.stdin.read()\n"
+            "print(json.dumps({'action':'create','name':'use-uv-not-pip',"
+            "'description':'Use uv instead of pip.',"
+            "'body':'# Use uv\\n',"
+            "'license':'MIT','confidence':0.9,'reason':'user preference'}))\n",
+            encoding="utf-8",
+        )
+        install_root = Path(self.tmp.name) / "installed"
+        result = self.run_hook(
+            ["--host", "codex", "--review", "--model-cmd", f"{sys.executable} {fake}"],
+            {
+                "session_id": "s1",
+                "transcript_path": str(transcript),
+                "cwd": str(ROOT),
+                "hook_event_name": "Stop",
+                "stop_hook_active": False,
+            },
+            {"AJIA_LEARNING_INSTALL_ROOT": str(install_root), "AJIA_REVIEW_BUILTIN": "1"},
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.home / "foundry" / "use-uv-not-pip" / "SKILL.md").exists())
+        self.assertTrue((install_root / "ajia-use-uv-not-pip" / "SKILL.md").exists())
+
+    def test_hook_review_stops_when_active(self) -> None:
+        transcript = Path(self.tmp.name) / "transcript.jsonl"
+        transcript.write_text('{"type":"user","message":{"role":"user","content":"remember this"}}\n', encoding="utf-8")
+        result = self.run_hook(
+            ["--host", "claude", "--review"],
+            {
+                "session_id": "s1",
+                "transcript_path": str(transcript),
+                "cwd": str(ROOT),
+                "hook_event_name": "Stop",
+                "stop_hook_active": True,
+            },
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), {})
+        self.assertFalse((self.home / "foundry").exists())
+
+
+
 if __name__ == "__main__":
     unittest.main()

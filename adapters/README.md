@@ -57,53 +57,39 @@ Copy `omp/ajia-router.ts` to `~/.omp/agent/extensions/`, then run
 
 ## Codex
 
-Add a `UserPromptSubmit` hook in `~/.codex/hooks.json`:
+Install both hooks with:
 
-```json
-{
-  "hooks": {
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/home/ajiap/project/ajiaskill/bin/ajia-hook --host codex",
-            "timeout": 6,
-            "additionalContextLimit": 0
-          }
-        ]
-      }
-    ]
-  }
-}
+```bash
+ajia setup codex-hooks --install
 ```
 
-`additionalContextLimit: 0` is required for a full skill body.
+Then run `/hooks` in Codex and trust the new definitions.
+
+- `UserPromptSubmit` injects the routed skill and memory.
+- `Stop` runs `ajia-hook --review --host codex` in the background. It reads
+  `transcript_path`, asks `codex exec` for a strict review plan, then calls
+  `ajia review`.
+
+Set `additionalContextLimit: 0` if you want the full skill body rather than
+Codex's preview.
 
 ## Claude Code
 
-Add a `UserPromptSubmit` hook in `~/.claude/settings.json`:
+Install both hooks with:
 
-```json
-{
-  "hooks": {
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/home/ajiap/project/ajiaskill/bin/ajia-hook --host claude",
-            "timeout": 3
-          }
-        ]
-      }
-    ]
-  }
-}
+```bash
+ajia setup claude-hooks --install
+# restart Claude Code
 ```
 
+- `UserPromptSubmit` injects the routed skill and memory.
+- `Stop` runs `ajia-hook --review --host claude` in the background. It reads
+  `transcript_path`, asks `claude -p --bare` for a strict review plan, then
+  calls `ajia review`.
+
 Claude has a 10,000-character cap. The hook truncates at 9,000 and points to
-`ajia use <id> --json` for the full body.
+`ajia use <id> --json` for the full body. If Claude is not logged in, the
+review falls back to `AJIA_REVIEW_URL`; with neither, it fails open.
 
 ## Hermes
 

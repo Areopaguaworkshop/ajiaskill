@@ -19,6 +19,7 @@
   },
   "files": [
     "bin/ajia",
+    "bin/ajia-hook",
     "npm/",
     "skills/",
     "hosts.json",

@@ -2776,6 +2776,56 @@ def cmd_setup(home: Path, args: argparse.Namespace) -> int:
             print(f"ln -s {shlex.quote(str(source))} {shlex.quote(str(dest))}")
             print("or run: ajia setup opencode-plugin --install")
         return 0
+    elif host in {"claude-hooks", "codex-hooks"}:
+        target_host = "claude" if host == "claude-hooks" else "codex"
+        path = Path.home() / (".claude/settings.json" if target_host == "claude" else ".codex/hooks.json")
+        hook = Path(__file__).resolve().with_name("ajia-hook")
+        prompt_command = f"{sys.executable} {hook} --host {target_host}"
+        review_command = f"{sys.executable} {hook} --review --host {target_host}"
+        prompt_handler = {"type": "command", "command": prompt_command, "timeout": 10}
+        if target_host == "codex":
+            prompt_handler["additionalContextLimit"] = 0
+        additions = {
+            "UserPromptSubmit": [{"hooks": [prompt_handler]}],
+            "Stop": [
+                {
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": review_command,
+                            "async": True,
+                            "timeout": 180,
+                        }
+                    ]
+                }
+            ],
+        }
+        if not args.install:
+            print(f"add to {path}:")
+            print(json.dumps({"hooks": additions}, indent=2))
+            print(f"or run: ajia setup {host} --install")
+            return 0
+        config = read_json(path, {})
+        hooks = config.setdefault("hooks", {})
+        for event, groups in additions.items():
+            existing = hooks.setdefault(event, [])
+            commands = {
+                item.get("command")
+                for group in existing
+                for item in group.get("hooks", [])
+                if isinstance(item, dict)
+            }
+            for group in groups:
+                for item in group.get("hooks", []):
+                    if item.get("command") not in commands:
+                        existing.append({"hooks": [item]})
+        write_json(path, config)
+        print(f"installed hooks: {path}")
+        if target_host == "codex":
+            print("run /hooks in Codex and trust the new hooks")
+        else:
+            print("restart Claude Code to load the hooks")
+        return 0
     elif host == "pi":
         print(f"pi mcp add ajiaskill -- {python} {script} mcp --host pi")
     elif host == "hermes":
@@ -4321,7 +4371,7 @@ def build_parser() -> argparse.ArgumentParser:
     use.add_argument("--json", action="store_true")
 
     setup = sub.add_parser("setup", help="Print the MCP registration command.")
-    setup.add_argument("host", choices=["opencode", "pi", "hermes", "codex", "omp", "claude", "opencode-plugin", "generic"])
+    setup.add_argument("host", choices=["opencode", "pi", "hermes", "codex", "omp", "claude", "opencode-plugin", "claude-hooks", "codex-hooks", "generic"])
     setup.add_argument("--install", action="store_true", help="Install the OpenCode plugin symlink.")
 
     route = sub.add_parser("route", help="Route a user message to one skill.")

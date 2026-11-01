@@ -1,6 +1,6 @@
 # ajia-learn autolearn — plan
 
-Status: M0 and M1 implemented; M2 host adapters pending.
+Status: M0–M2 implemented; M3 Pi/OMP + curator pending.
 
 Visual plan: [ajia-learn-autolearn.html](ajia-learn-autolearn.html)
 
@@ -240,7 +240,7 @@ until approved.
 |---|---|---|
 | M0 | `ajia use` usage ledger; `ajia review --transcript`; foundry candidate; validation/scan; quarantine; backup; ledger; immutable guards; tests — **implemented** | Real correction creates a skill; search/use finds it; noop on trivial; injection does not write; blocked skill is quarantined; install failure restores backup; core/user skill patch is refused |
 | M1 | OpenCode V2 plugin: completion trigger, host `generate`, auto-install to `~/.agents/skills`, `ctx.skill.reload`, memory injection — **implemented** | One automatic review; skill installed and visible next turn; scan/quarantine/backup/rollback exercised; no core/user writes |
-| M2 | Claude Code `Stop` + `claude -p`; Codex `notify`/`exec`; memory injection | Same acceptance on each host; per-host disable |
+| M2 | Claude Code `Stop` + `claude -p`; Codex `Stop` + `codex exec`; memory injection — **implemented** | Same acceptance on each host; per-host disable |
 | M3 | Pi/OMP adapters; repetition signal; dedupe/merge; curator (pin/adopt/archive/rollback); outcome metrics | No duplicates; stale/archive works; rollback works |
 | M4 | Privacy/redaction, injection eval, cost caps, docs, rollout | Security fixtures pass; per-day budget respected |
 
