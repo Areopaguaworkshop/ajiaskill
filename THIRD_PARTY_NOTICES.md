@@ -79,15 +79,6 @@ files next to its `SKILL.md`.
 - Notice: `skills/impeccable/NOTICE`
 - Local addition: `reference/pdf-export.md`, `scripts/pdf-export.sh`, and the PDF section in `SKILL.md` are ajiaskill additions, not upstream.
 
-## rtk-ai — `rtk-ai/rtk`
-
-- Source: https://github.com/rtk-ai/rtk
-- Files: `.claude/skills/{code-simplifier,design-patterns,issue-triage,performance,pr-review,pr-triage,repo-recap,rtk-tdd,rtk-triage,security-guardian,ship,tdd-rust}/`
-- Used by: `skills/code-simplifier/`, `skills/design-patterns/`, `skills/issue-triage/`, `skills/performance/`, `skills/pr-review/`, `skills/pr-triage/`, `skills/repo-recap/`, `skills/rtk-tdd/`, `skills/rtk-triage/`, `skills/security-guardian/`, `skills/ship/`, `skills/tdd-rust/`
-- License: Apache-2.0 (the RTK CLI; the `engine/` BUSL-1.1 tree is not vendored)
-- Copyright: rtk-ai contributors
-- Note: these skills are RTK/Rust-specific; they reference RTK commands and modules.
-
 ## NVIDIA — `NVIDIA/OpenShell`
 
 - Source: https://github.com/NVIDIA/OpenShell

@@ -46,6 +46,8 @@ pnpm-debug.log*
 *.key
 
 # Generated artifacts
+.archify/
+.bsk.lock
 .tmp/
 *.log
 *.tgz

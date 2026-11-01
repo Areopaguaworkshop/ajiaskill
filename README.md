@@ -33,7 +33,17 @@ You describe the feature or task. You do not name a skill, and you do not wire a
 4. **Optional gate:** `ajia route --gate` asks a model to select 0-2 candidates from the retrieved set.
 5. **Deterministic path:** `ajia route` or a host hook can inject one skill on every matching turn.
 
-MCP is the tool surface, not the chooser. It never reads the user message. The host and model decide. If no candidate is safe, the correct result is `none`.
+### OpenCode walkthrough
+
+MCP is the tool surface, not the chooser: it never reads the user message, and the host and model decide. That split is the unique part. In OpenCode the path is:
+
+1. **Native check:** OpenCode loads the descriptions of installed core skills from its host roots (mapped in `hosts.json`). A native match wins; `ajia_use` refuses to return a duplicate fallback.
+2. **`ajia_search`:** with no native match, the model calls `ajia_search` with the task and `host: opencode`. The server filters by profile source, ranks the catalog (lexical, body BM25, optional dense), and returns metadata only, including id, description, license, risk, and `native_hosts`.
+3. **Choose:** the model picks a result id. The server never selects a skill.
+4. **`ajia_use`:** the server copies the exact bytes to a content-addressed read-only store, records a 30-day trial, and returns the full `SKILL.md` plus `base_dir`.
+5. **Follow in place:** the model follows the returned body. Nothing is installed or promoted; `ajia promote` remains a separate, explicitly approved step.
+
+If no candidate is safe, the correct result is `none`. See the [OpenCode skill discovery workflow](docs/diagrams/opencode-skill-discovery.html) for the full standalone diagram.
 
 ## Unified personal settings
 
@@ -209,7 +219,7 @@ python3 bin/ajia setup claude
 
 Each command prints the exact registration command and the trigger policy. The MCP server is registered as `ajiaskill`; its tools are read-only. They are live on OpenCode, Pi, Hermes, Codex, OMP, and Claude. Each registration passes `--host` so search results can mark native skills and `ajia_use` can refuse a duplicate fallback.
 
-The server sends a trigger policy on `initialize`: diagrams and visual explainers -> `archify`; one-page HTML answers -> `answer-me-with-html`; browser tasks -> `browser-skill`; app verification -> `create-verification-skill`; frontend design -> `impeccable`; GUI automation -> `cua-driver`; RTK/Rust CLI work -> the `rtk-*` family. The policy is guidance, not injection; the model still decides. Install core skills natively (see `install.sh`) to make them auto-discoverable in the host.
+The server sends a trigger policy on `initialize`: diagrams and visual explainers -> `archify`; one-page HTML answers -> `answer-me-with-html`; browser tasks -> `browser-skill`; app verification -> `create-verification-skill`; frontend design -> `impeccable`; GUI automation -> `cua-driver`. The policy is guidance, not injection; the model still decides. Install core skills natively (see `install.sh`) to make them auto-discoverable in the host.
 
 Start a new host session to load `ajia_search` and `ajia_use` if they are not visible yet.
 
@@ -383,21 +393,6 @@ Output and interfaces:
 - `browser-skill` — drive the user's logged-in Chromium browser through `bsk`.
 - `cua-driver` — drive native GUI apps through the `cua-driver` CLI or MCP server.
 - `openshell-policy-advisor` — narrow network-policy proposals when an OpenShell sandbox returns `policy_denied`.
-
-RTK and Rust CLI work:
-
-- `rtk-triage` — cross issue and PR triage with security-gap analysis.
-- `issue-triage` — audit open issues, find duplicates, cross-reference PRs, assess risk.
-- `pr-triage` — audit open PRs, review selected ones, draft comments.
-- `pr-review` — batch-review PRs in increasing size order, with explicit merge approval.
-- `security-guardian` — command injection, shell escaping, and hook security review.
-- `performance` — startup time, memory, and token-savings analysis.
-- `code-simplifier` — idiomatic Rust simplification without behavior change.
-- `design-patterns` — Rust patterns for new modules and refactors.
-- `rtk-tdd` — Red-Green-Refactor with Rust testing patterns.
-- `tdd-rust` — TDD for RTK filter development with fixtures and snapshots.
-- `ship` — build, version bump, changelog, tag, and push.
-- `repo-recap` — PR, issue, and release recap for sharing.
 
 The bundled third-party skills keep their upstream notices in `THIRD_PARTY_NOTICES.md`. Some need an external tool: `archify` and `answer-me-with-html` run bundled Node scripts, `impeccable` fetches its engine on first run, `cua-driver` needs the Cua driver, `browser-skill` needs `bsk` and its browser extension, and `openshell-policy-advisor` runs inside an OpenShell sandbox.
 

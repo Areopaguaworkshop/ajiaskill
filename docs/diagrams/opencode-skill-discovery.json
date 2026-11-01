@@ -1,0 +1,399 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "OpenCode + ajiaskill — finding the right skill",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "output": "docs/diagrams/opencode-skill-discovery.html",
+    "repository": {
+      "url": "https://github.com/Areopaguaworkshop/ajiaskill.git",
+      "provider": "github",
+      "revision": "4ca55e7be69433904f1eb9a1e1ffa74e785bef75"
+    }
+  },
+  "lanes": [
+    {
+      "id": "user",
+      "label": "User"
+    },
+    {
+      "id": "host",
+      "label": "OpenCode host + model"
+    },
+    {
+      "id": "select",
+      "label": "Selection"
+    },
+    {
+      "id": "mcp",
+      "label": "ajiaskill MCP"
+    },
+    {
+      "id": "data",
+      "label": "Catalog + store"
+    }
+  ],
+  "phases": [
+    {
+      "id": "intake",
+      "label": "Intake",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "discover",
+      "label": "Discover + choose",
+      "fromCol": 2,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "use",
+      "label": "Load + use",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": [
+    "task",
+    "session",
+    "native",
+    "search",
+    "decide",
+    "use",
+    "skill",
+    "follow",
+    "result"
+  ],
+  "nodes": [
+    {
+      "id": "task",
+      "lane": "user",
+      "col": 0,
+      "type": "external",
+      "label": "User task",
+      "sublabel": "natural language"
+    },
+    {
+      "id": "session",
+      "lane": "host",
+      "col": 1,
+      "type": "frontend",
+      "label": "OpenCode session",
+      "sublabel": "native skill descriptions",
+      "tag": "host = opencode",
+      "sources": [
+        {
+          "path": "hosts.json",
+          "line": 4,
+          "end_line": 16,
+          "label": "OpenCode skill roots"
+        },
+        {
+          "path": "bin/ajia",
+          "line": 2240,
+          "end_line": 2258,
+          "label": "MCP server start"
+        }
+      ]
+    },
+    {
+      "id": "native",
+      "lane": "select",
+      "col": 2,
+      "type": "security",
+      "label": "Native skill?",
+      "sublabel": "installed skills first",
+      "tag": "native first",
+      "sources": [
+        {
+          "path": "bin/ajia",
+          "line": 698,
+          "end_line": 743,
+          "label": "native inventory"
+        },
+        {
+          "path": "hosts.json",
+          "line": 4,
+          "end_line": 16,
+          "label": "host roots"
+        }
+      ]
+    },
+    {
+      "id": "search",
+      "lane": "mcp",
+      "col": 2,
+      "type": "backend",
+      "label": "ajia_search",
+      "sublabel": "query · rank · limit 5",
+      "tag": "metadata only",
+      "sources": [
+        {
+          "path": "bin/ajia",
+          "line": 2263,
+          "end_line": 2289,
+          "label": "tool schema"
+        },
+        {
+          "path": "bin/ajia",
+          "line": 1354,
+          "end_line": 1500,
+          "label": "search and rank"
+        }
+      ]
+    },
+    {
+      "id": "catalog",
+      "lane": "data",
+      "col": 3,
+      "type": "database",
+      "label": "Catalog",
+      "sublabel": "deduped skills.jsonl",
+      "tag": "core + sources",
+      "sources": [
+        {
+          "path": "bin/ajia",
+          "line": 915,
+          "end_line": 927,
+          "label": "catalog load"
+        },
+        {
+          "path": "bin/ajia",
+          "line": 752,
+          "end_line": 914,
+          "label": "catalog build"
+        }
+      ]
+    },
+    {
+      "id": "decide",
+      "lane": "host",
+      "col": 3,
+      "type": "frontend",
+      "label": "Model chooses",
+      "sublabel": "id · license · native flag",
+      "tag": "agent decision",
+      "sources": [
+        {
+          "path": "bin/ajia",
+          "line": 1476,
+          "end_line": 1499,
+          "label": "candidate metadata"
+        }
+      ]
+    },
+    {
+      "id": "use",
+      "lane": "mcp",
+      "col": 4,
+      "type": "backend",
+      "label": "ajia_use",
+      "sublabel": "id → SKILL.md",
+      "tag": "read-only",
+      "sources": [
+        {
+          "path": "bin/ajia",
+          "line": 2291,
+          "end_line": 2310,
+          "label": "tool schema"
+        },
+        {
+          "path": "bin/ajia",
+          "line": 1539,
+          "end_line": 1600,
+          "label": "use skill"
+        }
+      ]
+    },
+    {
+      "id": "store",
+      "lane": "data",
+      "col": 4,
+      "type": "database",
+      "label": "Exact-byte store",
+      "sublabel": "hash path · 30-day trial",
+      "tag": "not installed",
+      "sources": [
+        {
+          "path": "bin/ajia",
+          "line": 97,
+          "end_line": 110,
+          "label": "state paths"
+        },
+        {
+          "path": "bin/ajia",
+          "line": 1539,
+          "end_line": 1600,
+          "label": "copy and trial"
+        }
+      ]
+    },
+    {
+      "id": "skill",
+      "lane": "mcp",
+      "col": 5,
+      "type": "backend",
+      "label": "SKILL.md + base_dir",
+      "sublabel": "full body returned",
+      "sources": [
+        {
+          "path": "bin/ajia",
+          "line": 1566,
+          "end_line": 1598,
+          "label": "returned payload"
+        }
+      ]
+    },
+    {
+      "id": "follow",
+      "lane": "host",
+      "col": 5,
+      "type": "backend",
+      "label": "Follow in place",
+      "sublabel": "no copy, no install",
+      "tag": "use, don't promote",
+      "sources": [
+        {
+          "path": "bin/ajia",
+          "line": 1590,
+          "end_line": 1596,
+          "label": "usage note"
+        }
+      ]
+    },
+    {
+      "id": "result",
+      "lane": "user",
+      "col": 5,
+      "type": "frontend",
+      "label": "Answer / artifact",
+      "sublabel": "text · HTML · PDF"
+    }
+  ],
+  "edges": [
+    {
+      "id": "task-session",
+      "from": "task",
+      "to": "session",
+      "label": "message",
+      "variant": "emphasis"
+    },
+    {
+      "id": "session-native",
+      "from": "session",
+      "to": "native",
+      "label": "check installed",
+      "variant": "security"
+    },
+    {
+      "id": "native-follow",
+      "from": "native",
+      "to": "follow",
+      "label": "native match",
+      "variant": "security",
+      "role": "branch"
+    },
+    {
+      "id": "native-search",
+      "from": "native",
+      "to": "search",
+      "label": "no native match",
+      "variant": "default",
+      "role": "main"
+    },
+    {
+      "id": "search-catalog",
+      "from": "search",
+      "to": "catalog",
+      "label": "query",
+      "variant": "default"
+    },
+    {
+      "id": "catalog-search",
+      "from": "catalog",
+      "to": "search",
+      "label": "records",
+      "variant": "default",
+      "role": "return"
+    },
+    {
+      "id": "search-decide",
+      "from": "search",
+      "to": "decide",
+      "label": "top 5 metadata",
+      "variant": "emphasis"
+    },
+    {
+      "id": "decide-use",
+      "from": "decide",
+      "to": "use",
+      "label": "call ajia_use(id)",
+      "variant": "emphasis"
+    },
+    {
+      "id": "use-store",
+      "from": "use",
+      "to": "store",
+      "label": "copy exact bytes",
+      "variant": "dashed"
+    },
+    {
+      "id": "use-skill",
+      "from": "use",
+      "to": "skill",
+      "label": "body + base_dir",
+      "variant": "emphasis"
+    },
+    {
+      "id": "skill-follow",
+      "from": "skill",
+      "to": "follow",
+      "label": "read",
+      "variant": "default"
+    },
+    {
+      "id": "follow-result",
+      "from": "follow",
+      "to": "result",
+      "label": "produce",
+      "variant": "emphasis"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Native first",
+      "items": [
+        "Installed skill descriptions are available before any MCP call.",
+        "A native match wins; ajia_use refuses a duplicate fallback."
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Search is read-only",
+      "items": [
+        "ajia_search returns metadata: id, description, license, risk, native_hosts.",
+        "It filters to enabled profile sources and marks native duplicates."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Use is not install",
+      "items": [
+        "ajia_use copies exact bytes to a content-addressed store and records a 30-day trial.",
+        "Promotion needs ajia promote and explicit user approval."
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Wire OpenCode",
+      "items": [
+        "opencode mcp add --global ajiaskill -- python bin/ajia mcp --host opencode",
+        "initialize carries the advisory trigger policy."
+      ]
+    }
+  ]
+}

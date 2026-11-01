@@ -9,18 +9,6 @@
 {"query": "avoid a new dependency for this fix", "skill": "ponytail"}
 {"query": "state your assumptions before changing this module", "skill": "karpathy-guidelines"}
 {"query": "I lose focus in long replies; give me the next action", "skill": "i-have-adhd"}
-{"query": "check the RTK diff for regressions before merge", "skill": "pr-review"}
-{"query": "audit the open RTK pull requests", "skill": "pr-triage"}
-{"query": "cross-check RTK issues and PRs for gaps", "skill": "rtk-triage"}
-{"query": "look for shell injection in this CLI hook", "skill": "security-guardian"}
-{"query": "this Rust function is too verbose", "skill": "code-simplifier"}
-{"query": "cold start is too slow", "skill": "performance"}
-{"query": "choose a Rust pattern for this parser", "skill": "design-patterns"}
-{"query": "use red-green-refactor for this Rust change", "skill": "rtk-tdd"}
-{"query": "add snapshot tests for the new RTK filter", "skill": "tdd-rust"}
-{"query": "find duplicate GitHub issues", "skill": "issue-triage"}
-{"query": "summarize the release history for the team", "skill": "repo-recap"}
-{"query": "publish version 1.5.0 and push the tag", "skill": "ship"}
 {"query": "stress-test my plan before I build", "skill": "grill-me"}
 {"query": "break this feature into verifiable tasks", "skill": "write-plan"}
 {"query": "check this skill for malware before I install it", "skill": "ajia-scan"}
