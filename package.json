@@ -1,7 +1,7 @@
 {
   "name": "ajiaskill",
-  "version": "0.1.6",
-  "description": "Personal skill manager and platform for coding agents: catalog, MCP, native-first routing, and gated promotion.",
+  "version": "0.2.0",
+  "description": "Personal skill manager and platform for coding agents: catalog, MCP, native-first routing, automatic learning, and gated promotion.",
   "license": "MIT",
   "author": "ajia",
   "repository": {
@@ -51,7 +51,9 @@
     "hermes",
     "omp",
     "claude",
-    "coding-agents"
+    "coding-agents",
+    "autolearn",
+    "learning"
   ],
   "publishConfig": {
     "access": "public"
