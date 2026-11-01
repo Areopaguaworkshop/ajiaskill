@@ -9,9 +9,6 @@
 {"query": "test this UI in the browser", "skill": "browser-skill"}
 {"query": "create a verification skill for this repo", "skill": "create-verification-skill"}
 {"query": "prove this app flow works end to end", "skill": "create-verification-skill"}
-{"query": "drive the Finder window and rename this file", "skill": "cua-driver"}
-{"query": "use computer use to fill the desktop app", "skill": "cua-driver"}
-{"query": "the OpenShell sandbox returned policy_denied", "skill": "openshell-policy-advisor"}
 {"query": "make this page prettier", "skill": "impeccable"}
 {"query": "redesign the landing page", "skill": "impeccable"}
 {"query": "audit the UI hierarchy", "skill": "impeccable"}
@@ -24,6 +21,5 @@
 {"query": "use adhd mode for this plan", "skill": "i-have-adhd"}
 {"query": "make the next action obvious", "skill": "i-have-adhd"}
 {"query": "grill me on this vague idea", "skill": "grill-me"}
-{"query": "write a plan for this feature", "skill": "write-plan"}
 {"query": "scan this skill before I install it", "skill": "ajia-scan"}
 {"query": "promote this skill into core", "skill": "ajia-promote"}

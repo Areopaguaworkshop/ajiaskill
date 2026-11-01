@@ -219,7 +219,7 @@ python3 bin/ajia setup claude
 
 Each command prints the exact registration command and the trigger policy. The MCP server is registered as `ajiaskill`; its tools are read-only. They are live on OpenCode, Pi, Hermes, Codex, OMP, and Claude. Each registration passes `--host` so search results can mark native skills and `ajia_use` can refuse a duplicate fallback.
 
-The server sends a trigger policy on `initialize`: diagrams and visual explainers -> `archify`; one-page HTML answers -> `answer-me-with-html`; browser tasks -> `browser-skill`; app verification -> `create-verification-skill`; frontend design -> `impeccable`; GUI automation -> `cua-driver`. The policy is guidance, not injection; the model still decides. Install core skills natively (see `install.sh`) to make them auto-discoverable in the host.
+The server sends a trigger policy on `initialize`: diagrams and visual explainers -> `archify`; one-page HTML answers -> `answer-me-with-html`; browser tasks -> `browser-skill`; app verification -> `create-verification-skill`; frontend design -> `impeccable`. The policy is guidance, not injection; the model still decides. Install core skills natively (see `install.sh`) to make them auto-discoverable in the host.
 
 Start a new host session to load `ajia_search` and `ajia_use` if they are not visible yet.
 
@@ -322,6 +322,10 @@ Promotion rules:
 | `ajia uninstall <id>` | Remove an owned promoted copy. |
 | `ajia sandbox <id> --run '<cmd>'` | Print or run a Docker sandbox command. |
 | `ajia learn '<source>'` | Print the Hermes `/learn` path and the foundry path. |
+| `ajia review --transcript <file> [--plan <json>]` | Review a transcript and write or install a learned skill. |
+| `ajia learning status/pause/resume` | Inspect or pause automatic learning. |
+| `ajia learning quarantine list/show/release` | Inspect or release quarantined learned skills. |
+| `ajia learning ledger/rollback/approve/adopt/pin` | Inspect, restore, approve, or protect learned skills. |
 | `ajia policy` | Print the 2-line trigger policy. |
 | `ajia status` | Show sources, skills, and trials. |
 | `ajia doctor` | Check the local setup. |
@@ -360,6 +364,19 @@ A profile selects sources, hosts, router thresholds, and safety policy. The
 default `personal` profile allows every enabled source. The `work` profile is a
 smaller example.
 
+## Learning runtime (M0)
+
+`ajia review` is the host-neutral engine behind `ajia-learn`. It takes a transcript, or a `--plan` produced by a host model, writes a review-owned foundry candidate, scans it, and then installs to `~/.agents/skills`, quarantines it, or stages it for approval.
+
+```bash
+ajia review --transcript transcript.txt --plan plan.json --builtin
+ajia learning status
+ajia learning quarantine list
+ajia learning rollback <slug>
+```
+
+Automatic learning is enabled by default. `ajia learning pause` stops review and install without removing installed skills. Host plugins and hooks are the next phase; M0 ships the engine, usage ledger, scan, quarantine, backup, ledger, rollback, and immutable core/user guards.
+
 ## Native-first
 
 `hosts.json` holds the user and project skill roots for all six hosts. `ajia native` scans them, marks ajia-owned symlinks and promoted copies, and reports what is truly native. `ajia search --host` and `ajia route --host` use that inventory. A native skill wins, and the source fallback is refused.
@@ -369,7 +386,6 @@ smaller example.
 Workflow and output style:
 
 - `grill-me` — turn a vague idea into shared understanding.
-- `write-plan` — turn that understanding into an executable plan.
 - `caveman` — terse caveman voice; every technical fact, no ceremony.
 - `ponytail` — lazy senior dev mode; the smallest complete change.
 - `karpathy-guidelines` — surgical changes, explicit assumptions, verifiable success.
@@ -391,10 +407,8 @@ Output and interfaces:
 - `answer-me-with-html` — one-page visual HTML explainer from a short Markdown draft.
 - `impeccable` — frontend design, redesign, audit, polish, and print/PDF export.
 - `browser-skill` — drive the user's logged-in Chromium browser through `bsk`.
-- `cua-driver` — drive native GUI apps through the `cua-driver` CLI or MCP server.
-- `openshell-policy-advisor` — narrow network-policy proposals when an OpenShell sandbox returns `policy_denied`.
 
-The bundled third-party skills keep their upstream notices in `THIRD_PARTY_NOTICES.md`. Some need an external tool: `archify` and `answer-me-with-html` run bundled Node scripts, `impeccable` fetches its engine on first run, `cua-driver` needs the Cua driver, `browser-skill` needs `bsk` and its browser extension, and `openshell-policy-advisor` runs inside an OpenShell sandbox.
+The bundled third-party skills keep their upstream notices in `THIRD_PARTY_NOTICES.md`. Some need an external tool: `archify` and `answer-me-with-html` run bundled Node scripts, `impeccable` fetches its engine on first run, and `browser-skill` needs `bsk` and its browser extension.
 
 ## Layout
 

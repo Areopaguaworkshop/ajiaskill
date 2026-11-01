@@ -56,3 +56,8 @@ docs/diagrams/*.finalize*.json
 docs/diagrams/*.browser-check*.json
 docs/diagrams/*.delivery*.json
 docs/diagrams/*.visual/
+docs/plans/*.visual-check.*
+docs/plans/*.finalize*.json
+docs/plans/*.browser-check*.json
+docs/plans/*.delivery*.json
+docs/plans/*.visual/

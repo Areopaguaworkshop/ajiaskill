@@ -18,4 +18,4 @@ Give a fresh agent this prompt without the skill:
 - Builds a design tree and asks only the frontier.
 - Gives one recommended answer per question.
 - Does not implement before confirmation.
-- Ends with a shared-understanding block and hands off to `write-plan`.
+- Ends with a shared-understanding block and hands off to a planning skill.

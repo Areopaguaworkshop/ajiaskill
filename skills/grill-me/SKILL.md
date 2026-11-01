@@ -21,7 +21,7 @@ Do not implement, scaffold, or write a plan until the user confirms the shared u
 
 ## When not to use
 
-- The user gave a complete spec with acceptance criteria. Go to `write-plan`.
+- The user gave a complete spec with acceptance criteria. Go to a planning skill.
 - The answer is in the repository, docs, or a tool. Inspect it; do not ask.
 - The change is small and reversible. Do the change, then use `prove-it`.
 - The user explicitly says "just build it". Record the assumptions in one paragraph, confirm them, and continue.
@@ -88,6 +88,6 @@ Key decisions:
 Open assumptions:
 ```
 
-Ask the user to confirm or correct it. Only then hand off to `write-plan`.
+Ask the user to confirm or correct it. Only then hand off to a planning skill.
 
 If the user wants a durable record, save the block to `docs/specs/YYYY-MM-DD-<slug>.md`. Otherwise keep it in the conversation.

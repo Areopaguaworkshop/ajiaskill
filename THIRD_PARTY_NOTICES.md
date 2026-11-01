@@ -12,14 +12,6 @@ files next to its `SKILL.md`.
 - License: MIT
 - Copyright: Matt Pocock
 
-## Jesse Vincent — `obra/superpowers`
-
-- Source: https://github.com/obra/superpowers
-- Files: `skills/writing-plans/SKILL.md`
-- Used by: `skills/write-plan/SKILL.md`
-- License: MIT
-- Copyright: Jesse Vincent
-
 ## Julius Brussee — `JuliusBrussee/caveman`
 
 - Source: https://github.com/JuliusBrussee/caveman
@@ -78,22 +70,6 @@ files next to its `SKILL.md`.
 - Copyright: pbakaus and contributors
 - Notice: `skills/impeccable/NOTICE`
 - Local addition: `reference/pdf-export.md`, `scripts/pdf-export.sh`, and the PDF section in `SKILL.md` are ajiaskill additions, not upstream.
-
-## NVIDIA — `NVIDIA/OpenShell`
-
-- Source: https://github.com/NVIDIA/OpenShell
-- Files: `crates/openshell-supervisor-process/src/skills/policy-advisor/SKILL.md`
-- Used by: `skills/openshell-policy-advisor/`
-- License: Apache-2.0
-- Copyright: 2026 NVIDIA CORPORATION & AFFILIATES
-
-## Cua AI — `trycua/cua`
-
-- Source: https://github.com/trycua/cua
-- Files: `libs/cua-driver/rust/Skills/cua-driver/`
-- Used by: `skills/cua-driver/`
-- License: MIT
-- Copyright: 2025 Cua AI, Inc.
 
 ## Ayoub Ghriss — `ayghri/i-have-adhd`
 

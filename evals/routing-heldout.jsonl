@@ -2,15 +2,12 @@
 {"query": "turn this trade-off into a shareable page", "skill": "answer-me-with-html"}
 {"query": "log in to the site and download the invoice", "skill": "browser-skill"}
 {"query": "write a script that launches the app and checks the checkout flow", "skill": "create-verification-skill"}
-{"query": "open the desktop settings and toggle dark mode", "skill": "cua-driver"}
-{"query": "the sandbox blocked a network call to the registry", "skill": "openshell-policy-advisor"}
 {"query": "the settings screen feels cluttered", "skill": "impeccable"}
 {"query": "cut this response to the essentials", "skill": "caveman"}
 {"query": "avoid a new dependency for this fix", "skill": "ponytail"}
 {"query": "state your assumptions before changing this module", "skill": "karpathy-guidelines"}
 {"query": "I lose focus in long replies; give me the next action", "skill": "i-have-adhd"}
 {"query": "stress-test my plan before I build", "skill": "grill-me"}
-{"query": "break this feature into verifiable tasks", "skill": "write-plan"}
 {"query": "check this skill for malware before I install it", "skill": "ajia-scan"}
 {"query": "install this skill into my host", "skill": "ajia-promote"}
 {"query": "run this skill script with no network", "skill": "ajia-sandbox"}

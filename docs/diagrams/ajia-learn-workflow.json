@@ -1,0 +1,204 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "ajia-learn — from user input to a reusable skill",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "output": "docs/diagrams/ajia-learn-workflow.html",
+    "repository": {
+      "url": "https://github.com/Areopaguaworkshop/ajiaskill.git",
+      "provider": "github",
+      "revision": "2ef24db6effc0717eb791f767c159047a3364a0c"
+    }
+  },
+  "lanes": [
+    { "id": "user", "label": "User" },
+    { "id": "agent", "label": "Host + ajia-learn" },
+    { "id": "foundry", "label": "Foundry" },
+    { "id": "catalog", "label": "Catalog" },
+    { "id": "safety", "label": "Safety + install" }
+  ],
+  "phases": [
+    { "id": "intake", "label": "Intake", "fromCol": 0, "toCol": 1 },
+    { "id": "build", "label": "Draft + index", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "prove", "label": "Prove + install", "fromCol": 4, "toCol": 5, "variant": "dashed" }
+  ],
+  "mainPath": [
+    "request",
+    "learn",
+    "draft",
+    "sync",
+    "catalog",
+    "use",
+    "scan",
+    "promote",
+    "host",
+    "result"
+  ],
+  "nodes": [
+    {
+      "id": "request",
+      "lane": "user",
+      "col": 0,
+      "type": "external",
+      "label": "User input",
+      "sublabel": "repo · doc · URL · workflow"
+    },
+    {
+      "id": "learn",
+      "lane": "agent",
+      "col": 1,
+      "type": "backend",
+      "label": "ajia-learn",
+      "sublabel": "inspect + draft",
+      "tag": "redact secrets",
+      "sources": [
+        { "path": "skills/ajia-learn/SKILL.md", "line": 9, "end_line": 18, "label": "foundry steps" },
+        { "path": "skills/ajia-learn/SKILL.md", "line": 35, "end_line": 42, "label": "rules" }
+      ]
+    },
+    {
+      "id": "draft",
+      "lane": "foundry",
+      "col": 2,
+      "type": "backend",
+      "label": "Foundry candidate",
+      "sublabel": "foundry/<slug>/SKILL.md",
+      "tag": "not installed",
+      "sources": [
+        { "path": "skills/ajia-learn/SKILL.md", "line": 12, "end_line": 15, "label": "candidate shape" },
+        { "path": "bin/ajia", "line": 97, "end_line": 110, "label": "foundry path" }
+      ]
+    },
+    {
+      "id": "sync",
+      "lane": "foundry",
+      "col": 3,
+      "type": "backend",
+      "label": "ajia foundry sync",
+      "sublabel": "rebuild catalog",
+      "tag": "index",
+      "sources": [
+        { "path": "bin/ajia", "line": 2662, "end_line": 2685, "label": "foundry sync" },
+        { "path": "bin/ajia", "line": 810, "end_line": 822, "label": "foundry indexing" }
+      ]
+    },
+    {
+      "id": "catalog",
+      "lane": "catalog",
+      "col": 3,
+      "type": "database",
+      "label": "Catalog",
+      "sublabel": "generated_by: foundry",
+      "tag": "curator: candidate",
+      "sources": [
+        { "path": "bin/ajia", "line": 810, "end_line": 822, "label": "foundry branch" },
+        { "path": "bin/ajia", "line": 912, "end_line": 926, "label": "catalog load" }
+      ]
+    },
+    {
+      "id": "use",
+      "lane": "agent",
+      "col": 4,
+      "type": "backend",
+      "label": "ajia use",
+      "sublabel": "read-only body + trial",
+      "tag": "use in place",
+      "sources": [
+        { "path": "bin/ajia", "line": 1536, "end_line": 1597, "label": "use skill" }
+      ]
+    },
+    {
+      "id": "scan",
+      "lane": "safety",
+      "col": 4,
+      "type": "security",
+      "label": "ajia scan",
+      "sublabel": "SkillEvaluator + SkillSpector",
+      "tag": "gate",
+      "sources": [
+        { "path": "bin/ajia", "line": 3065, "end_line": 3103, "label": "scan command" }
+      ]
+    },
+    {
+      "id": "promote",
+      "lane": "safety",
+      "col": 5,
+      "type": "security",
+      "label": "ajia promote --yes",
+      "sublabel": "explicit approval",
+      "tag": "no auto-promote",
+      "sources": [
+        { "path": "bin/ajia", "line": 3104, "end_line": 3144, "label": "promote plan" },
+        { "path": "skills/ajia-learn/SKILL.md", "line": 35, "end_line": 40, "label": "promotion rules" }
+      ]
+    },
+    {
+      "id": "host",
+      "lane": "catalog",
+      "col": 5,
+      "type": "database",
+      "label": "Host skill root",
+      "sublabel": "copy + .ajia-promoted.json",
+      "tag": "installed",
+      "sources": [
+        { "path": "bin/ajia", "line": 3135, "end_line": 3140, "label": "install targets" },
+        { "path": "bin/ajia", "line": 3192, "end_line": 3212, "label": "copy and marker" }
+      ]
+    },
+    {
+      "id": "result",
+      "lane": "user",
+      "col": 5,
+      "type": "frontend",
+      "label": "Reusable skill",
+      "sublabel": "visible to all MCP hosts"
+    }
+  ],
+  "edges": [
+    { "id": "request-learn", "from": "request", "to": "learn", "label": "task or source", "variant": "emphasis" },
+    { "id": "learn-draft", "from": "learn", "to": "draft", "label": "write SKILL.md", "variant": "emphasis" },
+    { "id": "draft-sync", "from": "draft", "to": "sync", "label": "ajia foundry sync", "variant": "emphasis" },
+    { "id": "sync-catalog", "from": "sync", "to": "catalog", "label": "index", "variant": "default" },
+    { "id": "catalog-use", "from": "catalog", "to": "use", "label": "foundry/<slug>", "variant": "default", "role": "return" },
+    { "id": "use-scan", "from": "use", "to": "scan", "label": "trial + bytes", "variant": "default" },
+    { "id": "scan-promote", "from": "scan", "to": "promote", "label": "pass", "variant": "security" },
+    { "id": "promote-host", "from": "promote", "to": "host", "label": "explicit --yes", "variant": "security" },
+    { "id": "host-result", "from": "host", "to": "result", "label": "installed", "variant": "emphasis" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Inputs",
+      "items": [
+        "A repo, a document, a URL, or the workflow just completed.",
+        "Inspect first and redact secrets before writing."
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Candidate is not installed",
+      "items": [
+        "The foundry entry is indexed with generated_by: foundry and curator_state: candidate.",
+        "ajia generated lists it; ajia use returns a read-only body and a 30-day trial."
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Hermes path",
+      "items": [
+        "ajia learn --execute, or hermes chat then /learn <source>, then ajia source sync hermes.",
+        "Hermes created_by and curator_state come from ~/.hermes/skills/.usage.json."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Hard rules",
+      "items": [
+        "Never auto-promote. Scan before promote.",
+        "Never copy into .agents/skills or .claude/skills; that is installation."
+      ]
+    }
+  ]
+}

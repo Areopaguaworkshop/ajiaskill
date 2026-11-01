@@ -88,24 +88,24 @@ def main() -> int:
                     (used.get("content") or [{}])[0].get("text", "")[:80],
                 )
 
-            plan_search = client.tool(
+            skill_search = client.tool(
                 "ajia_search",
-                {"query": "write a plan", "limit": 3, "host": host},
+                {"query": "grill me on a vague idea", "limit": 3, "host": host},
             )
-            plan_results = json.loads(plan_search["content"][0]["text"])
-            plan = next(
-                (item for item in plan_results if item["name"] == "write-plan"), None
+            skill_results = json.loads(skill_search["content"][0]["text"])
+            skill = next(
+                (item for item in skill_results if item["name"] == "grill-me"), None
             )
-            if plan:
-                plan_use = client.tool(
-                    "ajia_use", {"id": plan["id"], "host": host}
+            if skill:
+                skill_use = client.tool(
+                    "ajia_use", {"id": skill["id"], "host": host}
                 )
-                body = (plan_use.get("content") or [{}])[0].get("text", "")
-                parsed = json.loads(body) if not plan_use.get("isError") else {}
+                body = (skill_use.get("content") or [{}])[0].get("text", "")
+                parsed = json.loads(body) if not skill_use.get("isError") else {}
                 print(
                     host,
-                    "use write-plan:",
-                    "error" if plan_use.get("isError") else f"body {len(parsed.get('body', ''))} chars",
+                    "use grill-me:",
+                    "error" if skill_use.get("isError") else f"body {len(parsed.get('body', ''))} chars",
                 )
 
             foundry_search = client.tool(
