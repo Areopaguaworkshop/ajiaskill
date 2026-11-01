@@ -28,7 +28,9 @@
     "README.md",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md",
-    "adapters/opencode/ajia-learn/"
+    "adapters/opencode/ajia-learn/",
+    "adapters/pi/",
+    "adapters/omp/"
   ],
   "engines": {
     "node": ">=20"

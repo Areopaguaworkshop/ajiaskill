@@ -201,6 +201,15 @@ def host_model_command(host: str, model_cmd: str | None) -> list[str]:
         if model:
             command.extend(["--model", model])
         return command
+    if host in {"pi", "omp"}:
+        binary = os.environ.get(
+            "AJIA_PI_BIN" if host == "pi" else "AJIA_OMP_BIN",
+            host,
+        )
+        command = [binary, "-p", "--no-tools", "--no-extensions", "--no-session"]
+        if model:
+            command.extend(["--model", model])
+        return command
     binary = os.environ.get("AJIA_CODEX_BIN", "codex")
     command = [
         binary,
@@ -241,7 +250,7 @@ def run_review_hook(payload: dict[str, object], args: argparse.Namespace) -> Non
     if bool(payload.get("stop_hook_active")):
         print("{}")
         return
-    if args.host not in {"claude", "codex"}:
+    if args.host not in {"claude", "codex", "pi", "omp"}:
         print("{}")
         return
     transcript_path = payload.get("transcript_path")
@@ -291,7 +300,7 @@ def run_review_hook(payload: dict[str, object], args: argparse.Namespace) -> Non
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--host", choices=["codex", "claude", "hermes"], required=True)
+    parser.add_argument("--host", choices=["codex", "claude", "pi", "omp", "hermes"], required=True)
     parser.add_argument("--max-chars", type=int, default=0)
     parser.add_argument("--review", action="store_true", help="Review the finished transcript.")
     parser.add_argument("--model-cmd", help="Override the host review command; prompt arrives on stdin.")

@@ -1095,5 +1095,84 @@ class AjiaTest(unittest.TestCase):
 
 
 
+    def test_learning_suggest_and_archive(self) -> None:
+        (self.home / "routing.jsonl").write_text(
+            json.dumps({"query_preview": "review the same pull request", "selected": None}) + "\n"
+            + json.dumps({"query_preview": "review the same pull request", "selected": None}) + "\n",
+            encoding="utf-8",
+        )
+        suggested = self.run_cli("learning", "suggest", "--json")
+        self.assertEqual(suggested.returncode, 0, suggested.stderr)
+        suggestions = json.loads(suggested.stdout)
+        self.assertEqual(suggestions[0]["count"], 2)
+
+        transcript = Path(self.tmp.name) / "transcript.txt"
+        transcript.write_text("user: remember this\n", encoding="utf-8")
+        plan = self.write_learning_plan(
+            "archive",
+            {
+                "action": "create",
+                "name": "archive-me",
+                "description": "Archive test.",
+                "body": "# Archive\n",
+                "license": "MIT",
+                "confidence": 0.9,
+            },
+        )
+        env = self.learning_env()
+        created = self.run_cli(
+            "review", "--transcript", str(transcript), "--plan", str(plan),
+            "--builtin", "--json", env_overrides=env,
+        )
+        self.assertEqual(created.returncode, 0, created.stderr)
+        archived = self.run_cli("learning", "archive", "archive-me", env_overrides=env)
+        self.assertEqual(archived.returncode, 0, archived.stderr)
+        self.assertFalse((self.home / "foundry" / "archive-me").exists())
+        self.assertFalse((Path(env["AJIA_LEARNING_INSTALL_ROOT"]) / "ajia-archive-me").exists())
+        self.assertTrue((self.home / "learning" / "archive" / "archive-me" / "SKILL.md").exists())
+        restored = self.run_cli("learning", "restore", "archive-me", env_overrides=env)
+        self.assertEqual(restored.returncode, 0, restored.stderr)
+        self.assertTrue((self.home / "foundry" / "archive-me" / "SKILL.md").exists())
+
+    def test_review_refuses_similar_create(self) -> None:
+        transcript = Path(self.tmp.name) / "transcript.txt"
+        transcript.write_text("user: remember this\n", encoding="utf-8")
+        first = self.write_learning_plan(
+            "first",
+            {
+                "action": "create",
+                "name": "use-unittest",
+                "description": "Use python unittest for this repository.",
+                "body": "# Use unittest\n",
+                "license": "MIT",
+                "confidence": 0.9,
+            },
+        )
+        second = self.write_learning_plan(
+            "second",
+            {
+                "action": "create",
+                "name": "use-unittest-please",
+                "description": "Use python unittest for this repository.",
+                "body": "# Use unittest\n",
+                "license": "MIT",
+                "confidence": 0.9,
+            },
+        )
+        env = self.learning_env()
+        created = self.run_cli(
+            "review", "--transcript", str(transcript), "--plan", str(first),
+            "--builtin", "--json", env_overrides=env,
+        )
+        self.assertEqual(created.returncode, 0, created.stderr)
+        duplicate = self.run_cli(
+            "review", "--transcript", str(transcript), "--plan", str(second),
+            "--builtin", "--json", env_overrides=env,
+        )
+        self.assertEqual(duplicate.returncode, 1)
+        self.assertIn("similar review-owned skill exists", duplicate.stderr)
+
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -47,13 +47,29 @@ uninstall the plugin.
 
 ## Pi
 
-Copy `pi/ajia-router.ts` to `~/.pi/agent/extensions/`, then run `/reload`.
-The adapter appends the selected body to the system prompt.
+Install with:
+
+```bash
+ajia setup pi-plugin --install
+# reload extensions in Pi
+```
+
+`before_agent_start` injects the routed skill and memory. `agent_settled`
+reviews the finished session in the background through
+`ajia-hook --review --host pi`, which uses `pi -p` as the review model.
 
 ## OMP
 
-Copy `omp/ajia-router.ts` to `~/.omp/agent/extensions/`, then run
-`/reload-plugins`. The adapter appends the selected body to the system prompt.
+Install with:
+
+```bash
+ajia setup omp-plugin --install
+# reload extensions in OMP
+```
+
+`before_agent_start` injects the routed skill and memory. `agent_end` reviews
+the finished session in the background through
+`ajia-hook --review --host omp`, which uses `omp -p` as the review model.
 
 ## Codex
 

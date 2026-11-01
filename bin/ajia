@@ -7,6 +7,7 @@ expose search/use over MCP. Standard library only.
 from __future__ import annotations
 
 import argparse
+import difflib
 import hashlib
 import json
 import math
@@ -2826,6 +2827,24 @@ def cmd_setup(home: Path, args: argparse.Namespace) -> int:
         else:
             print("restart Claude Code to load the hooks")
         return 0
+    elif host in {"pi-plugin", "omp-plugin"}:
+        target = "pi" if host == "pi-plugin" else "omp"
+        source = REPO_ROOT / "adapters" / target / "ajia-router.ts"
+        dest = Path.home() / (".pi/agent/extensions" if target == "pi" else ".omp/agent/extensions") / "ajia-router.ts"
+        if args.install:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            if dest.is_symlink() and dest.resolve() == source.resolve():
+                print(f"already installed: {dest}")
+            elif dest.exists() or dest.is_symlink():
+                print(f"skip {dest} (already exists; remove it first)")
+            else:
+                os.symlink(source, dest)
+                print(f"installed: {dest} -> {source}")
+            print("reload extensions in " + ("Pi" if target == "pi" else "OMP"))
+        else:
+            print(f"ln -s {shlex.quote(str(source))} {shlex.quote(str(dest))}")
+            print(f"or run: ajia setup {host} --install")
+        return 0
     elif host == "pi":
         print(f"pi mcp add ajiaskill -- {python} {script} mcp --host pi")
     elif host == "hermes":
@@ -3896,9 +3915,29 @@ def review_apply_plan(
             if review_owned(foundry_dir):
                 raise SkillError(f"review-owned skill already exists: {slug}; use patch")
             raise SkillError(f"skill is user-owned: {slug}")
-        for record in load_catalog(home, quiet=True):
+        catalog = load_catalog(home, quiet=True)
+        for record in catalog:
             if str(record.get("name", "")).lower() == slug and record.get("source", {}).get("id") != "foundry":
                 raise SkillError(f"skill name already exists in {record.get('id')}: {slug}")
+        for record in catalog:
+            if record.get("source", {}).get("id") != "foundry":
+                continue
+            candidate = Path(str(record.get("source_path", "")))
+            if not review_owned(candidate):
+                continue
+            other = str(record.get("name", ""))
+            ratio = max(
+                difflib.SequenceMatcher(None, slug, other).ratio(),
+                difflib.SequenceMatcher(
+                    None,
+                    str(plan.get("description", "")).lower(),
+                    str(record.get("description", "")).lower(),
+                ).ratio(),
+            )
+            if ratio >= 0.82:
+                raise SkillError(
+                    f"similar review-owned skill exists: {other}; use patch instead of create"
+                )
         sidecar = {
             "schema": 1,
             "origin": "review",
@@ -4078,7 +4117,31 @@ def memory_scan(text: str) -> None:
             raise SkillError(f"memory rejected by scan rule: {rule}")
 
 
+def memory_context_text(home: Path, cwd: str | None) -> str:
+    key = safe_id(Path(cwd or Path.cwd()).name or "default")
+    files = [
+        ("User memory", paths(home)["memory"] / "USER.md"),
+        ("Project memory", paths(home)["memory_projects"] / f"{key}.md"),
+    ]
+    chunks: list[str] = []
+    for label, path in files:
+        try:
+            text = path.read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        if text:
+            chunks.append(f"### {label}\n{text}")
+    return "\n\n".join(chunks)[:6000]
+
+
 def cmd_memory(home: Path, args: argparse.Namespace) -> int:
+    if args.memory_command == "context":
+        text = memory_context_text(home, args.cwd)
+        if args.json:
+            print(json.dumps({"text": text}, ensure_ascii=False, indent=2))
+        else:
+            print(text)
+        return 0
     scope = args.scope
     if scope == "project" and not args.project:
         raise SkillError("--project is required with --scope project")
@@ -4242,9 +4305,140 @@ def learning_rollback(home: Path, config: dict[str, Any], value: str) -> dict[st
     return {"schema": 1, "status": "rolled_back", "id": chosen.get("id"), "slug": slug, "entry_id": entry["entry_id"]}
 
 
+
+def learning_suggestions(home: Path, threshold: int = 2) -> list[dict[str, Any]]:
+    counts: dict[str, dict[str, Any]] = {}
+    for path in (home / "routing.jsonl", home / "mcp-calls.jsonl"):
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            query = ""
+            if path.name == "routing.jsonl":
+                query = str(item.get("query_preview") or "")
+            elif item.get("tool") == "ajia_search":
+                args = item.get("arguments") or {}
+                query = str(args.get("query") or "")
+            normalized = " ".join(re.findall(r"[a-z0-9]+", query.lower()))
+            if len(normalized) < 4:
+                continue
+            entry = counts.setdefault(normalized, {"query": query, "count": 0, "selected": set()})
+            entry["count"] += 1
+            if item.get("selected"):
+                entry["selected"].add(str(item["selected"]))
+    suggestions = []
+    for normalized, entry in counts.items():
+        if entry["count"] < threshold:
+            continue
+        suggestions.append(
+            {
+                "query": entry["query"],
+                "count": entry["count"],
+                "selected": sorted(entry["selected"]),
+                "normalized": normalized,
+            }
+        )
+    return sorted(suggestions, key=lambda item: (-item["count"], item["query"]))[:20]
+
+
+def learning_archive(home: Path, config: dict[str, Any], slug: str, reason: str = "manual") -> dict[str, Any]:
+    foundry_dir = paths(home)["foundry"] / slug
+    if not foundry_dir.is_dir():
+        raise SkillError(f"not found: {slug}")
+    if not review_owned(foundry_dir):
+        raise SkillError(f"skill is not review-owned: {slug}")
+    backup_root, before_foundry, before_installed = learning_backup(home, config, slug)
+    archive_dir = paths(home)["learning"] / "archive" / slug
+    if archive_dir.exists():
+        raise SkillError(f"archive target exists: {archive_dir}")
+    archive_dir.parent.mkdir(parents=True, exist_ok=True)
+    sidecar = review_sidecar(foundry_dir)
+    sidecar["state"] = "archived"
+    write_json(foundry_dir / ".ajia-learn.json", sidecar)
+    shutil.move(str(foundry_dir), str(archive_dir))
+    installed_dir = learning_install_root(home, config) / f"ajia-{slug}"
+    if installed_dir.exists() and installed_marker_owned(installed_dir, slug):
+        shutil.rmtree(installed_dir)
+    build_catalog(home, quiet=True)
+    entry = learning_ledger_append(
+        home,
+        {
+            "action": "archive",
+            "id": f"foundry/{slug}",
+            "slug": slug,
+            "status": "archived",
+            "reason": reason,
+            "backup": str(backup_root),
+            "foundry_before": before_foundry,
+            "foundry_after": None,
+            "installed_before": before_installed,
+            "installed_after": None,
+        },
+    )
+    return {"schema": 1, "status": "archived", "id": f"foundry/{slug}", "path": str(archive_dir), "entry_id": entry["entry_id"]}
+
+
+def learning_restore(home: Path, config: dict[str, Any], slug: str) -> dict[str, Any]:
+    archive_dir = paths(home)["learning"] / "archive" / slug
+    if not archive_dir.is_dir():
+        raise SkillError(f"not archived: {slug}")
+    foundry_dir = paths(home)["foundry"] / slug
+    if foundry_dir.exists():
+        raise SkillError(f"foundry target exists: {foundry_dir}")
+    shutil.move(str(archive_dir), str(foundry_dir))
+    sidecar = review_sidecar(foundry_dir)
+    sidecar["state"] = "candidate"
+    write_json(foundry_dir / ".ajia-learn.json", sidecar)
+    build_catalog(home, quiet=True)
+    entry = learning_ledger_append(home, {"action": "restore", "id": f"foundry/{slug}", "slug": slug, "status": "candidate"})
+    return {"schema": 1, "status": "restored", "id": f"foundry/{slug}", "entry_id": entry["entry_id"]}
+
+
+def learning_prune(home: Path, config: dict[str, Any], days: int) -> list[dict[str, Any]]:
+    usage = read_json(paths(home)["usage"], {}).get("skills", {})
+    if not isinstance(usage, dict):
+        usage = {}
+    cutoff = datetime.now(timezone.utc) - timedelta(days=max(1, days))
+    removed: list[dict[str, Any]] = []
+    foundry = paths(home)["foundry"]
+    if not foundry.is_dir():
+        return removed
+    for child in sorted(foundry.iterdir()):
+        if not child.is_dir() or not review_owned(child):
+            continue
+        sidecar = review_sidecar(child)
+        usage_rec = usage.get(f"foundry/{child.name}")
+        used = int(usage_rec.get("use_count", 0) or 0) if isinstance(usage_rec, dict) else 0
+        if used > 0:
+            continue
+        raw = sidecar.get("updated_at") or sidecar.get("created_at")
+        try:
+            stamp = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            continue
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=timezone.utc)
+        if stamp > cutoff:
+            continue
+        removed.append(learning_archive(home, config, child.name, reason=f"prune:{days}d"))
+    return removed
+
 def cmd_learning(home: Path, args: argparse.Namespace) -> int:
     config = learning_config(home)
     command = args.learning_command
+    if command == "suggest":
+        suggestions = learning_suggestions(home, args.threshold)
+        if args.json:
+            print(json.dumps(suggestions, ensure_ascii=False, indent=2))
+        else:
+            for item in suggestions:
+                print(f"{item['count']}x  {item['query']}")
+        return 0
     if command in {"status", "pause", "resume"}:
         if command == "pause":
             config["enabled"] = False
@@ -4274,6 +4468,18 @@ def cmd_learning(home: Path, args: argparse.Namespace) -> int:
     if command == "ledger":
         entries = learning_ledger_entries(home)
         print(json.dumps(entries, ensure_ascii=False, indent=2) if args.json else f"{len(entries)} entr{'y' if len(entries) == 1 else 'ies'}")
+        return 0
+    if command == "archive":
+        result = learning_archive(home, config, review_slug(args.id))
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+    if command == "restore":
+        result = learning_restore(home, config, review_slug(args.id))
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+    if command == "prune":
+        removed = learning_prune(home, config, args.days)
+        print(json.dumps(removed, ensure_ascii=False, indent=2) if args.json else f"pruned {len(removed)} skill(s)")
         return 0
     if command == "rollback":
         result = learning_rollback(home, config, args.id)
@@ -4371,7 +4577,7 @@ def build_parser() -> argparse.ArgumentParser:
     use.add_argument("--json", action="store_true")
 
     setup = sub.add_parser("setup", help="Print the MCP registration command.")
-    setup.add_argument("host", choices=["opencode", "pi", "hermes", "codex", "omp", "claude", "opencode-plugin", "claude-hooks", "codex-hooks", "generic"])
+    setup.add_argument("host", choices=["opencode", "pi", "hermes", "codex", "omp", "claude", "opencode-plugin", "claude-hooks", "codex-hooks", "pi-plugin", "omp-plugin", "generic"])
     setup.add_argument("--install", action="store_true", help="Install the OpenCode plugin symlink.")
 
     route = sub.add_parser("route", help="Route a user message to one skill.")
@@ -4482,6 +4688,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     memory = sub.add_parser("memory", help="Inspect or add durable user/project memory.")
     memory_sub = memory.add_subparsers(dest="memory_command", required=True)
+    memory_context = memory_sub.add_parser("context", help="Show combined user and project memory.")
+    memory_context.add_argument("--cwd")
+    memory_context.add_argument("--json", action="store_true")
     memory_show = memory_sub.add_parser("show", help="Show user or project memory.")
     memory_show.add_argument("--scope", choices=["user", "project"], default="user")
     memory_show.add_argument("--project")
@@ -4499,8 +4708,18 @@ def build_parser() -> argparse.ArgumentParser:
     learning_pause.add_argument("--json", action="store_true")
     learning_resume = learning_sub.add_parser("resume", help="Resume review and auto-install.")
     learning_resume.add_argument("--json", action="store_true")
+    learning_suggest = learning_sub.add_parser("suggest", help="Suggest repeated tasks from local logs.")
+    learning_suggest.add_argument("--threshold", type=int, default=2)
+    learning_suggest.add_argument("--json", action="store_true")
     learning_ledger = learning_sub.add_parser("ledger", help="Show the learning ledger.")
     learning_ledger.add_argument("--json", action="store_true")
+    learning_archive = learning_sub.add_parser("archive", help="Archive a review-owned skill.")
+    learning_archive.add_argument("id")
+    learning_restore = learning_sub.add_parser("restore", help="Restore an archived skill.")
+    learning_restore.add_argument("id")
+    learning_prune = learning_sub.add_parser("prune", help="Archive stale unused learned skills.")
+    learning_prune.add_argument("--days", type=int, default=30)
+    learning_prune.add_argument("--json", action="store_true")
     learning_rollback = learning_sub.add_parser("rollback", help="Restore a learning entry.")
     learning_rollback.add_argument("id")
     learning_approve = learning_sub.add_parser("approve", help="Install a pending learned skill.")
