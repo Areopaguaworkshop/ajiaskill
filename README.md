@@ -2,7 +2,7 @@
 
 A local skill platform for coding agents. State the feature or task; the host detects the right core skill and ajiaskill serves it. One catalog, one personal profile, one MCP server, and six hosts share the same setup.
 
-Status: **Phase 3b: foundry, profiles, and Hermes-generated metadata.** Catalog, search/use, MCP, safety, promotion, rollback, native inventory, remote source add, cross-agent foundry, profiles, and generated-skill metadata exist. Automatic skill detection, native-first routing, body and optional dense retrieval, an optional 0-2 gate, reference hooks, and one personal profile across six hosts exist. MCP is the default trigger. Hooks are optional and are not enabled by the installer.
+Status: **Phase 4: automatic learning and host integrations.** Catalog, search/use, MCP, safety, promotion, rollback, native inventory, remote source add, cross-agent foundry, profiles, automatic learning, and host integrations exist. Automatic skill detection, native-first routing, body and optional dense retrieval, an optional 0-2 gate, review-based learning, and one personal profile across six hosts exist. MCP is the default trigger; host plugins and hooks are opt-in through the setup commands.
 
 ## What it does
 
@@ -22,6 +22,7 @@ Status: **Phase 3b: foundry, profiles, and Hermes-generated metadata.** Catalog,
 - **Foundry:** writes cross-agent candidates under `~/.ajia/foundry`, and indexes Hermes `/learn` skills as candidates.
 - **Profiles:** one personal profile controls sources, hosts, routing thresholds, and safety policy across every host.
 - **Generated metadata:** Hermes `created_by` and curator state, plus foundry candidates, appear in the catalog.
+- **Automatic learning:** `ajia review` and the host integrations review a finished turn, write a review-owned foundry candidate, scan or quarantine it, back up and install it to `~/.agents/skills`, and record a ledger entry. Durable memory is injected on later turns.
 
 ## Automatic skill detection
 
@@ -71,7 +72,7 @@ python3 bin/ajia route "review this PR" --json --host opencode
 
 ## npm
 
-Published on npm as [`ajiaskill`](https://www.npmjs.com/package/ajiaskill). It ships the CLI, the MCP server, and the core skills. Python 3.10+ is required; the Node wrapper calls `python3` unless `AJIA_PYTHON` is set.
+Published on npm as [`ajiaskill`](https://www.npmjs.com/package/ajiaskill). It ships the CLI, the MCP server, the core skills, the OpenCode plugin, and the Pi/OMP extensions. Python 3.10+ is required; the Node wrapper calls `python3` unless `AJIA_PYTHON` is set.
 
 ```bash
 npm install -g ajiaskill
@@ -251,11 +252,19 @@ Automatic upgrades mean new skill prose is trusted without the scan/promote
 gate. If that trade-off is wrong for you, set `AJIA_AUTO_UPDATE=0` and use
 `ajia scan` / `ajia promote` for reviewed updates.
 
-## Host adapters (optional)
+## Host integrations (optional)
 
-MCP is the default. Hooks are optional and the installer does not enable them.
+MCP is the default. The installer links skills and the CLI; it does not enable host plugins or hooks. Enable them explicitly:
 
-`bin/ajia-hook` supports Codex, Claude, and Hermes. `adapters/` holds reference adapters for Pi, OMP, and OpenCode. Hooks call `ajia route` and fail open on timeout, error, low confidence, or an empty body. OpenCode stays on MCP until its adapter migration is stable. See `adapters/README.md` for the per-host caveats and config snippets.
+```bash
+ajia setup opencode-plugin --install   # OpenCode V2 plugin
+ajia setup claude-hooks --install      # Claude Code hooks
+ajia setup codex-hooks --install       # Codex hooks; trust via /hooks
+ajia setup pi-plugin --install         # Pi extension
+ajia setup omp-plugin --install        # OMP extension
+```
+
+`bin/ajia-hook` supports pre-turn and post-turn review for Codex, Claude, Pi, OMP, and Hermes. The integrations call `ajia route` before a turn and `ajia review` after it, fail open on timeout or error, and never install a skill without the engine's scan and gates. See `adapters/README.md` for per-host caveats.
 
 ## Safety stack
 
@@ -417,19 +426,22 @@ The bundled third-party skills keep their upstream notices in `THIRD_PARTY_NOTIC
 ## Layout
 
 ```text
-bin/ajia                 # CLI, router, and MCP server
-bin/ajia-hook            # generic Codex/Claude/Hermes hook
+bin/ajia                 # CLI, router, MCP server, learning engine
+bin/ajia-hook            # pre-turn and post-turn hook for five hosts
 npm/                     # Node entry points for the npm package
 package.json             # npm manifest, bin mapping, and publish file list
 hosts.json               # native and project skill roots per host
 profiles.json            # sources, hosts, routing, safety
 routing.json             # routing metadata for core and common skills
-adapters/                # reference OpenCode, Pi, and OMP adapters
+adapters/                # OpenCode plugin and Pi/OMP extensions
 skills/                  # core skills
+docs/plans/              # autolearn plan (Markdown + HTML)
 scripts/validate-skills.py
 scripts/eval-routing.py
+scripts/eval-learning.py
 scripts/test_mcp_hosts.py
 tests/test_ajia.py
+tests/test_opencode_plugin.mjs
 install.sh
 ```
 
