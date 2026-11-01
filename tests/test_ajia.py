@@ -98,6 +98,7 @@ class AjiaTest(unittest.TestCase):
                             },
                             "examples": {"positive": ["review this pr for bugs"]},
                             "negative_triggers": [],
+                            "file_globs": ["**/*.go"],
                             "host_fit": ["*"],
                             "priority": 90,
                             "routing": {"enabled": True},
@@ -132,6 +133,7 @@ class AjiaTest(unittest.TestCase):
         self,
         *args: str,
         env_overrides: dict[str, str] | None = None,
+        cwd: str | None = None,
     ) -> subprocess.CompletedProcess[str]:
         env = dict(os.environ, AJIA_HOME=str(self.home))
         if env_overrides:
@@ -141,6 +143,7 @@ class AjiaTest(unittest.TestCase):
             capture_output=True,
             text=True,
             env=env,
+            cwd=cwd,
             check=False,
         )
 
@@ -1370,6 +1373,40 @@ class AjiaTest(unittest.TestCase):
         self.assertEqual(
             dest.resolve(), (ROOT / "adapters" / "opencode" / "ajia-learn").resolve()
         )
+
+    def test_route_skips_recursive_glob_outside_a_project(self) -> None:
+        self.run_cli("catalog", "build")
+        # fixture/alpha declares **/*.go. Outside a project root that scan is
+        # skipped, so a stray .go file must not raise its ctx score; inside a
+        # project the glob matches and ctx reaches 1.0.
+        wide = Path(self.tmp.name) / "widecwd"
+        (wide / "nested" / "deeper").mkdir(parents=True)
+        (wide / "nested" / "deeper" / "stray.go").write_text("package main\n")
+        outside = self.run_cli(
+            "route", "review this PR", "--json", "--no-body", cwd=str(wide)
+        )
+        self.assertEqual(outside.returncode, 0, outside.stderr)
+        outside_alpha = next(
+            item
+            for item in json.loads(outside.stdout)["candidates"]
+            if item["name"] == "alpha"
+        )
+        self.assertLess(outside_alpha["components"]["ctx"], 1.0)
+
+        project = Path(self.tmp.name) / "projectcwd"
+        project.mkdir()
+        (project / "go.mod").write_text("module example\n")
+        (project / "main.go").write_text("package main\n")
+        inside = self.run_cli(
+            "route", "review this PR", "--json", "--no-body", cwd=str(project)
+        )
+        self.assertEqual(inside.returncode, 0, inside.stderr)
+        inside_alpha = next(
+            item
+            for item in json.loads(inside.stdout)["candidates"]
+            if item["name"] == "alpha"
+        )
+        self.assertEqual(inside_alpha["components"]["ctx"], 1.0)
 
 
 

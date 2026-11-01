@@ -40,6 +40,7 @@ POLICY = (
     "do not copy, install, or promote anything unless the user explicitly asks."
 )
 SKIP_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv", ".archive", ".hub"}
+_NATIVE_CACHE: dict[tuple[str, str, str | None], dict[str, dict[str, Any]]] = {}
 SKIP_FILES = {".DS_Store"}
 STORE_SCHEMA = 1
 NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -682,6 +683,16 @@ def profile_routing(home: Path) -> dict[str, Any]:
     return profile_config(home).get("routing", {}) or {}
 
 
+def glob_scan_ok(directory: Path) -> bool:
+    """Recursive file_globs are unbounded, and a no-match walks the whole tree
+    (`**/*.jsx` from $HOME measured 15s). Only scan real projects, where the
+    pattern matches early and the context score is meaningful anyway."""
+    root = Path(directory)
+    return (root / ".git").exists() or (root / "package.json").exists() or (
+        root / "pyproject.toml"
+    ).exists() or (root / "Cargo.toml").exists() or (root / "go.mod").exists()
+
+
 def host_roots(host: str, cwd: str | None, home: Path) -> list[Path]:
     config = load_hosts(home).get("hosts", {}).get(host, {})
     roots: list[Path] = []
@@ -711,6 +722,13 @@ def is_owned_skill(path: Path, home: Path) -> bool:
 def native_inventory(
     host: str, home: Path, cwd: str | None = None
 ) -> dict[str, dict[str, Any]]:
+    # Scanned dozens of times per route (names x hosts); the CLI is
+    # short-lived, so cache per process. A hook's route subprocess starts
+    # fresh, so a host skill change is still seen on the next turn.
+    cache_key = (host, str(home), cwd)
+    cached = _NATIVE_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
     inventory: dict[str, dict[str, Any]] = {}
     for root in host_roots(host, cwd, home):
         if not root.is_dir():
@@ -743,6 +761,7 @@ def native_inventory(
                     "host": host,
                     "owned": owned,
                 }
+    _NATIVE_CACHE[cache_key] = inventory
     return inventory
 
 
@@ -1821,7 +1840,7 @@ def route_skill(
             host_score = 0.0
         globs = meta.get("file_globs", []) or []
         glob_score = 0.5
-        if globs:
+        if globs and glob_scan_ok(context_dir):
             glob_score = 0.0
             for pattern in globs:
                 try:
@@ -2863,6 +2882,14 @@ def cmd_setup(home: Path, args: argparse.Namespace) -> int:
         print(f"pi mcp add ajiaskill -- {python} {script} mcp --host pi")
     elif host == "hermes":
         print(f"hermes mcp add ajiaskill --command {python} --args {script} mcp --host hermes")
+        print(
+            f"# Hermes reads ~/.agents/skills only as a git-root project root, so add it\n"
+            f"# under skills.external_dirs (keep existing entries) or native-first\n"
+            f"# refusal dead-ends. Edit ~/.hermes/config.yaml:\n"
+            f"#   skills:\n"
+            f"#     external_dirs:\n"
+            f"#       - ~/.agents/skills"
+        )
     elif host == "codex":
         print(f"codex mcp add ajiaskill -- {python} {script} mcp --host codex")
     elif host == "claude":

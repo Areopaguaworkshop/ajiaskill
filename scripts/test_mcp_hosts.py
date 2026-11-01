@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Live MCP-only five-host test: search, use, and native-first refusal."""
+"""Live MCP-only six-host test: search, use, and native-first refusal."""
 from __future__ import annotations
 
 import json
@@ -58,7 +58,7 @@ class Client:
 
 
 def main() -> int:
-    for host in ("opencode", "pi", "hermes", "codex", "omp"):
+    for host in ("opencode", "pi", "hermes", "codex", "omp", "claude"):
         client = Client(host)
         assert client.server == "ajiaskill", (host, client.server)
         print(host, "server:", client.server)

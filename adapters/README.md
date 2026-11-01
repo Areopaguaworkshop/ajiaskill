@@ -113,12 +113,23 @@ review falls back to `AJIA_REVIEW_URL`; with neither, it fails open.
 
 ## Hermes
 
+Hermes reads `~/.agents/skills` only as a git-root *project* root (and only
+when that root is trusted), so add it as an external dir or MCP native-first
+refusal will point at skills Hermes cannot see. Keep existing entries:
+
+```yaml
+skills:
+  external_dirs:
+    - /home/ajia/.local/share/omh/current/skills
+    - ~/.agents/skills
+```
+
 Add a shell hook in `~/.hermes/config.yaml`:
 
 ```yaml
 hooks:
   pre_llm_call:
-    - command: "/home/ajiap/project/ajiaskill/bin/ajia-hook --host hermes"
+    - command: "/home/ajia/Projects/ajiaskill/bin/ajia-hook --host hermes"
       timeout: 6
 ```
 
