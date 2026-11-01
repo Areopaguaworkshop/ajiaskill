@@ -1250,5 +1250,128 @@ class AjiaTest(unittest.TestCase):
 
 
 
+    def test_setup_hooks_keep_foreign_hook_in_mixed_group(self) -> None:
+        home = Path(self.tmp.name) / "mixedhome"
+        (home / ".claude").mkdir(parents=True)
+        settings = home / ".claude" / "settings.json"
+        settings.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "UserPromptSubmit": [
+                            {
+                                "hooks": [
+                                    {"type": "command", "command": "/usr/bin/notify"},
+                                ]
+                            }
+                        ],
+                        "Stop": [
+                            {
+                                "hooks": [
+                                    {
+                                        "type": "command",
+                                        "command": "/old/checkout/bin/ajia-hook --review --host claude",
+                                    },
+                                    {
+                                        "type": "command",
+                                        "command": "/usr/bin/notify-done",
+                                    },
+                                ]
+                            }
+                        ],
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        result = self.run_cli(
+            "setup", "claude-hooks", "--install", env_overrides={"HOME": str(home)}
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        hooks = json.loads(settings.read_text(encoding="utf-8"))["hooks"]
+        prompt = [
+            item["command"]
+            for group in hooks["UserPromptSubmit"]
+            for item in group["hooks"]
+        ]
+        stop = [
+            item["command"] for group in hooks["Stop"] for item in group["hooks"]
+        ]
+        self.assertCountEqual(prompt, ["/usr/bin/notify", f"{sys.executable} {HOOK} --host claude"])
+        self.assertCountEqual(
+            stop,
+            ["/usr/bin/notify-done", f"{sys.executable} {HOOK} --review --host claude"],
+        )
+
+    def test_setup_hooks_replace_stale_ajia_entry(self) -> None:
+        home = Path(self.tmp.name) / "hookhome"
+        (home / ".claude").mkdir(parents=True)
+        settings = home / ".claude" / "settings.json"
+        settings.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "UserPromptSubmit": [
+                            {
+                                "hooks": [
+                                    {
+                                        "type": "command",
+                                        "command": "/old/checkout/bin/ajia-hook --host claude",
+                                        "timeout": 10,
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        result = self.run_cli(
+            "setup", "claude-hooks", "--install", env_overrides={"HOME": str(home)}
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        hooks = json.loads(settings.read_text(encoding="utf-8"))["hooks"]
+        commands = [
+            item["command"]
+            for group in hooks["UserPromptSubmit"]
+            for item in group["hooks"]
+        ]
+        self.assertEqual(len(commands), 1)
+        self.assertIn(str(HOOK), commands[0])
+        again = self.run_cli(
+            "setup", "claude-hooks", "--install", env_overrides={"HOME": str(home)}
+        )
+        self.assertEqual(again.returncode, 0, again.stderr)
+        hooks = json.loads(settings.read_text(encoding="utf-8"))["hooks"]
+        self.assertEqual(
+            len(
+                [
+                    item
+                    for group in hooks["UserPromptSubmit"]
+                    for item in group["hooks"]
+                ]
+            ),
+            1,
+        )
+
+    def test_setup_plugin_repoints_existing_link(self) -> None:
+        home = Path(self.tmp.name) / "pluginhome"
+        plugins = home / ".config" / "opencode" / "plugins"
+        plugins.mkdir(parents=True)
+        stale = home / "old-ajia-learn"
+        stale.mkdir()
+        dest = plugins / "ajia-learn"
+        dest.symlink_to(stale)
+        result = self.run_cli(
+            "setup", "opencode-plugin", "--install", env_overrides={"HOME": str(home)}
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            dest.resolve(), (ROOT / "adapters" / "opencode" / "ajia-learn").resolve()
+        )
+
+
+
 if __name__ == "__main__":
     unittest.main()

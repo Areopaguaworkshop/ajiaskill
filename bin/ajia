@@ -25,7 +25,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 REPO_ROOT = Path(__file__).resolve().parent.parent
 POLICY = (
     "Prefer an installed native skill when it matches. Core triggers: "
@@ -2755,6 +2755,25 @@ def cmd_policy(home: Path, args: argparse.Namespace) -> int:
     return 0
 
 
+def install_link(source: Path, dest: Path) -> None:
+    """Create the adapter link, or repoint one this tool installed earlier."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.is_symlink() and dest.resolve() == source.resolve():
+        print(f"already installed: {dest}")
+        return
+    if dest.is_symlink() and "ajia" in os.readlink(dest):
+        previous = os.readlink(dest)
+        dest.unlink()
+        os.symlink(source, dest)
+        print(f"updated: {dest} -> {source} (was {previous})")
+        return
+    if dest.exists() or dest.is_symlink():
+        print(f"skip {dest} (already exists; remove it first)")
+        return
+    os.symlink(source, dest)
+    print(f"installed: {dest} -> {source}")
+
+
 def cmd_setup(home: Path, args: argparse.Namespace) -> int:
     python = shlex.quote(sys.executable)
     script = shlex.quote(str(Path(__file__).resolve()))
@@ -2765,14 +2784,7 @@ def cmd_setup(home: Path, args: argparse.Namespace) -> int:
         source = REPO_ROOT / "adapters" / "opencode" / "ajia-learn"
         dest = Path.home() / ".config" / "opencode" / "plugins" / "ajia-learn"
         if args.install:
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            if dest.is_symlink() and dest.resolve() == source.resolve():
-                print(f"already installed: {dest}")
-            elif dest.exists() or dest.is_symlink():
-                print(f"skip {dest} (already exists; remove it first)")
-            else:
-                os.symlink(source, dest)
-                print(f"installed: {dest} -> {source}")
+            install_link(source, dest)
             print("restart OpenCode to load the plugin")
         else:
             print(f"ln -s {shlex.quote(str(source))} {shlex.quote(str(dest))}")
@@ -2811,16 +2823,24 @@ def cmd_setup(home: Path, args: argparse.Namespace) -> int:
         hooks = config.setdefault("hooks", {})
         for event, groups in additions.items():
             existing = hooks.setdefault(event, [])
-            commands = {
-                item.get("command")
-                for group in existing
-                for item in group.get("hooks", [])
-                if isinstance(item, dict)
-            }
-            for group in groups:
-                for item in group.get("hooks", []):
-                    if item.get("command") not in commands:
-                        existing.append({"hooks": [item]})
+            # Replace only ajia's own hook items so a new install path or
+            # version does not leave a second hook running. Foreign hooks in
+            # the same group stay.
+            kept = []
+            for group in existing:
+                items = [
+                    item
+                    for item in group.get("hooks", [])
+                    if not (
+                        isinstance(item, dict)
+                        and "ajia-hook" in str(item.get("command", ""))
+                    )
+                ]
+                if items:
+                    group["hooks"] = items
+                    kept.append(group)
+            existing[:] = kept
+            existing.extend(groups)
         write_json(path, config)
         print(f"installed hooks: {path}")
         if target_host == "codex":
@@ -2833,14 +2853,7 @@ def cmd_setup(home: Path, args: argparse.Namespace) -> int:
         source = REPO_ROOT / "adapters" / target / "ajia-router.ts"
         dest = Path.home() / (".pi/agent/extensions" if target == "pi" else ".omp/agent/extensions") / "ajia-router.ts"
         if args.install:
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            if dest.is_symlink() and dest.resolve() == source.resolve():
-                print(f"already installed: {dest}")
-            elif dest.exists() or dest.is_symlink():
-                print(f"skip {dest} (already exists; remove it first)")
-            else:
-                os.symlink(source, dest)
-                print(f"installed: {dest} -> {source}")
+            install_link(source, dest)
             print("reload extensions in " + ("Pi" if target == "pi" else "OMP"))
         else:
             print(f"ln -s {shlex.quote(str(source))} {shlex.quote(str(dest))}")

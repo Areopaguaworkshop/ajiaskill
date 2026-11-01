@@ -264,7 +264,7 @@ ajia setup pi-plugin --install         # Pi extension
 ajia setup omp-plugin --install        # OMP extension
 ```
 
-`bin/ajia-hook` supports pre-turn and post-turn review for Codex, Claude, Pi, OMP, and Hermes. The integrations call `ajia route` before a turn and `ajia review` after it, fail open on timeout or error, and never install a skill without the engine's scan and gates. See `adapters/README.md` for per-host caveats.
+`bin/ajia-hook` supports pre-turn and post-turn review for Codex, Claude, Pi, OMP, and Hermes. The integrations call `ajia route` before a turn and `ajia review` after it, fail open on timeout or error, and never install a skill without the engine's scan and gates. Re-run the same setup command after an upgrade: it replaces its own hook or link in place instead of adding a duplicate. See `adapters/README.md` for per-host caveats.
 
 ## Safety stack
 

@@ -22,6 +22,10 @@ ajia route "<user message>" --json --host <host>
 They fail open: a timeout, error, low confidence, or empty body injects
 nothing.
 
+Re-running an `--install` command updates its own hook entry or symlink in
+place when the install path or version changes, so an upgrade does not leave a
+duplicate hook running every turn.
+
 ## OpenCode
 
 The V1 `opencode/ajia-router.mjs` reference remains blocked by the OpenCode 2.x
