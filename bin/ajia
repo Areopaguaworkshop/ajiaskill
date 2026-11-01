@@ -106,6 +106,8 @@ def paths(home: Path) -> dict[str, Path]:
         "lock": home / "ajia.lock.json",
         "learning": home / "learning",
         "learning_config": home / "learning.json",
+        "memory": home / "memory",
+        "memory_projects": home / "memory" / "projects",
         "usage": home / "usage.json",
         "quarantine": home / "learning" / "quarantine",
         "pending": home / "learning" / "pending",
@@ -120,6 +122,7 @@ def ensure_dirs(home: Path) -> None:
     for key in (
         "catalog", "store", "trials", "scans", "foundry", "source_cache",
         "learning", "quarantine", "pending", "blobs", "backups",
+        "memory", "memory_projects",
     ):
         p[key].mkdir(parents=True, exist_ok=True)
 
@@ -2756,6 +2759,23 @@ def cmd_setup(home: Path, args: argparse.Namespace) -> int:
     host = args.host
     if host == "opencode":
         print(f"opencode mcp add --global ajiaskill -- {python} {script} mcp --host opencode")
+    elif host == "opencode-plugin":
+        source = REPO_ROOT / "adapters" / "opencode" / "ajia-learn"
+        dest = Path.home() / ".config" / "opencode" / "plugins" / "ajia-learn"
+        if args.install:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            if dest.is_symlink() and dest.resolve() == source.resolve():
+                print(f"already installed: {dest}")
+            elif dest.exists() or dest.is_symlink():
+                print(f"skip {dest} (already exists; remove it first)")
+            else:
+                os.symlink(source, dest)
+                print(f"installed: {dest} -> {source}")
+            print("restart OpenCode to load the plugin")
+        else:
+            print(f"ln -s {shlex.quote(str(source))} {shlex.quote(str(dest))}")
+            print("or run: ajia setup opencode-plugin --install")
+        return 0
     elif host == "pi":
         print(f"pi mcp add ajiaskill -- {python} {script} mcp --host pi")
     elif host == "hermes":
@@ -3994,6 +4014,51 @@ def review_apply_plan(
     }
 
 
+
+def memory_path(home: Path, scope: str, project: str | None) -> Path:
+    if scope == "user":
+        return paths(home)["memory"] / "USER.md"
+    key = safe_id(project or Path.cwd().name)
+    return paths(home)["memory_projects"] / f"{key}.md"
+
+
+def memory_scan(text: str) -> None:
+    for severity, rule, pattern in SCAN_RULES:
+        if severity in {"critical", "high"} and pattern.search(text):
+            raise SkillError(f"memory rejected by scan rule: {rule}")
+
+
+def cmd_memory(home: Path, args: argparse.Namespace) -> int:
+    scope = args.scope
+    if scope == "project" and not args.project:
+        raise SkillError("--project is required with --scope project")
+    path = memory_path(home, scope, args.project)
+    if args.memory_command == "show":
+        text = path.read_text(encoding="utf-8") if path.exists() else ""
+        if args.json:
+            print(json.dumps({"scope": scope, "project": args.project, "path": str(path), "text": text}, ensure_ascii=False, indent=2))
+        else:
+            print(text.rstrip())
+        return 0
+    text = " ".join(args.text).strip()
+    if not text:
+        raise SkillError("memory text is empty")
+    memory_scan(text)
+    if len(text) > 2000:
+        raise SkillError("memory entry is too long; keep it under 2000 characters")
+    existing = path.read_text(encoding="utf-8") if path.exists() else ""
+    if text in {line.lstrip("- ").strip() for line in existing.splitlines()}:
+        print(json.dumps({"schema": 1, "status": "unchanged", "path": str(path)}))
+        return 0
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a", encoding="utf-8") as handle:
+        if existing and not existing.endswith("\n"):
+            handle.write("\n")
+        handle.write(f"- {text}\n")
+    print(json.dumps({"schema": 1, "status": "added", "path": str(path)}))
+    return 0
+
+
 def cmd_review(home: Path, args: argparse.Namespace) -> int:
     config = learning_config(home)
     if not bool(config.get("enabled", True)):
@@ -4256,7 +4321,8 @@ def build_parser() -> argparse.ArgumentParser:
     use.add_argument("--json", action="store_true")
 
     setup = sub.add_parser("setup", help="Print the MCP registration command.")
-    setup.add_argument("host", choices=["opencode", "pi", "hermes", "codex", "omp", "claude", "generic"])
+    setup.add_argument("host", choices=["opencode", "pi", "hermes", "codex", "omp", "claude", "opencode-plugin", "generic"])
+    setup.add_argument("--install", action="store_true", help="Install the OpenCode plugin symlink.")
 
     route = sub.add_parser("route", help="Route a user message to one skill.")
     route.add_argument("query")
@@ -4364,6 +4430,17 @@ def build_parser() -> argparse.ArgumentParser:
     review.add_argument("--builtin", action="store_true", help="Skip external scanners.")
     review.add_argument("--json", action="store_true")
 
+    memory = sub.add_parser("memory", help="Inspect or add durable user/project memory.")
+    memory_sub = memory.add_subparsers(dest="memory_command", required=True)
+    memory_show = memory_sub.add_parser("show", help="Show user or project memory.")
+    memory_show.add_argument("--scope", choices=["user", "project"], default="user")
+    memory_show.add_argument("--project")
+    memory_show.add_argument("--json", action="store_true")
+    memory_add = memory_sub.add_parser("add", help="Append a memory entry.")
+    memory_add.add_argument("text", nargs="+")
+    memory_add.add_argument("--scope", choices=["user", "project"], default="user")
+    memory_add.add_argument("--project")
+
     learning = sub.add_parser("learning", help="Inspect or control automatic learning.")
     learning_sub = learning.add_subparsers(dest="learning_command", required=True)
     learning_status = learning_sub.add_parser("status", help="Show learning state and counts.")
@@ -4451,6 +4528,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_review(home, args)
         if args.command == "learning":
             return cmd_learning(home, args)
+        if args.command == "memory":
+            return cmd_memory(home, args)
         if args.command == "catalog":
             if args.catalog_command == "build":
                 return cmd_catalog_build(home, args)

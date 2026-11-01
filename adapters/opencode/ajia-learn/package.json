@@ -1,0 +1,6 @@
+{
+  "name": "ajia-learn",
+  "private": true,
+  "type": "module",
+  "exports": "./index.js"
+}

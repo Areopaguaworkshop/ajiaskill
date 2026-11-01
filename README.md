@@ -326,6 +326,7 @@ Promotion rules:
 | `ajia learning status/pause/resume` | Inspect or pause automatic learning. |
 | `ajia learning quarantine list/show/release` | Inspect or release quarantined learned skills. |
 | `ajia learning ledger/rollback/approve/adopt/pin` | Inspect, restore, approve, or protect learned skills. |
+| `ajia memory show/add` | Read or append durable user or project memory. |
 | `ajia policy` | Print the 2-line trigger policy. |
 | `ajia status` | Show sources, skills, and trials. |
 | `ajia doctor` | Check the local setup. |
@@ -364,7 +365,7 @@ A profile selects sources, hosts, router thresholds, and safety policy. The
 default `personal` profile allows every enabled source. The `work` profile is a
 smaller example.
 
-## Learning runtime (M0)
+## Learning runtime (M1)
 
 `ajia review` is the host-neutral engine behind `ajia-learn`. It takes a transcript, or a `--plan` produced by a host model, writes a review-owned foundry candidate, scans it, and then installs to `~/.agents/skills`, quarantines it, or stages it for approval.
 
@@ -375,7 +376,7 @@ ajia learning quarantine list
 ajia learning rollback <slug>
 ```
 
-Automatic learning is enabled by default. `ajia learning pause` stops review and install without removing installed skills. Host plugins and hooks are the next phase; M0 ships the engine, usage ledger, scan, quarantine, backup, ledger, rollback, and immutable core/user guards.
+Automatic learning is enabled by default. `ajia learning pause` stops review and install without removing installed skills. M0 ships the engine, usage ledger, scan, quarantine, backup, ledger, rollback, and immutable core/user guards. M1 adds the OpenCode V2 plugin: install it with `ajia setup opencode-plugin --install` and restart OpenCode. It reviews on `session.execution.succeeded`, uses the session model, reloads learned skills, and injects `~/.ajia/memory` into the context. Claude Code and Codex adapters are next.
 
 ## Native-first
 

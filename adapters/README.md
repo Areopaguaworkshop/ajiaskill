@@ -1,7 +1,8 @@
 # Host adapters
 
-These are **reference-only** hook adapters. They are **not installed**. MCP is
-the default trigger. Keep this directory for a future deterministic mode.
+The `ajia-router` files are **reference-only** pre-turn adapters. They are
+**not installed**. MCP is the default trigger. The OpenCode autolearn plugin is
+the first installable adapter; the rest remain references.
 
 | Host | Status | Note |
 |---|---|---|
@@ -10,7 +11,7 @@ the default trigger. Keep this directory for a future deterministic mode.
 | Codex | not installed | Reference hook; trust via `/hooks` if enabled. |
 | OMP | not installed | Reference extension only. |
 | Claude | not installed | Reference hook; 10K context cap if enabled. |
-| OpenCode | not installed | Blocked by local plugin/schema migration; MCP only. |
+| OpenCode | **V2 autolearn plugin available** | Install with `ajia setup opencode-plugin --install`. |
 
 All adapters call:
 
@@ -23,10 +24,26 @@ nothing.
 
 ## OpenCode
 
-MCP only on this machine. OpenCode 2.1.4 reported plugin and schema migration
-failures when the hook was tested. Do not enable the adapter until that is
-fixed. The reference V1 adapter is in `opencode/ajia-router.mjs`; a V2 adapter
-using `ctx.session.hook("context", ...)` is the future attempt.
+The V1 `opencode/ajia-router.mjs` reference remains blocked by the OpenCode 2.x
+plugin migration. Do not enable it.
+
+The V2 autolearn plugin lives in `opencode/ajia-learn/`. Install it explicitly:
+
+```bash
+ajia setup opencode-plugin --install
+# restart OpenCode
+```
+
+It listens for `session.execution.succeeded`, reads the transcript with
+`ctx.session.context`, asks the session model for a strict review plan via
+`ctx.session.generate`, then runs `ajia review --host opencode`. Learned skills
+are scanned, quarantined or installed by the engine, and the plugin calls
+`ctx.skill.reload()` so OpenCode sees them. Memory files in
+`~/.ajia/memory/USER.md` and `~/.ajia/memory/projects/` are injected through the
+`context` hook.
+
+Disable with `ajia learning pause`; remove the symlink and restart OpenCode to
+uninstall the plugin.
 
 ## Pi
 

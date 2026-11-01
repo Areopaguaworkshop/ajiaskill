@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -929,6 +930,34 @@ class AjiaTest(unittest.TestCase):
         approved = self.run_cli("learning", "approve", "pending-skill", env_overrides=env)
         self.assertEqual(approved.returncode, 0, approved.stderr)
         self.assertTrue((Path(env["AJIA_LEARNING_INSTALL_ROOT"]) / "ajia-pending-skill" / "SKILL.md").exists())
+
+
+
+    @unittest.skipUnless(shutil.which("node"), "node is required")
+    def test_opencode_plugin_helpers(self) -> None:
+        result = subprocess.run(
+            ["node", str(ROOT / "tests" / "test_opencode_plugin.mjs")],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+
+
+    def test_memory_add_and_show(self) -> None:
+        added = self.run_cli("memory", "add", "Prefer uv over pip.", "--scope", "user")
+        self.assertEqual(added.returncode, 0, added.stderr)
+        project = self.run_cli(
+            "memory", "add", "Tests use unittest.", "--scope", "project", "--project", "demo"
+        )
+        self.assertEqual(project.returncode, 0, project.stderr)
+        shown = self.run_cli("memory", "show", "--json")
+        self.assertEqual(shown.returncode, 0, shown.stderr)
+        self.assertIn("Prefer uv over pip.", json.loads(shown.stdout)["text"])
+        project_shown = self.run_cli("memory", "show", "--scope", "project", "--project", "demo")
+        self.assertEqual(project_shown.returncode, 0, project_shown.stderr)
+        self.assertIn("Tests use unittest.", project_shown.stdout)
 
 
 

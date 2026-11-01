@@ -26,7 +26,8 @@
     "routing.json",
     "README.md",
     "LICENSE",
-    "THIRD_PARTY_NOTICES.md"
+    "THIRD_PARTY_NOTICES.md",
+    "adapters/opencode/ajia-learn/"
   ],
   "engines": {
     "node": ">=20"
