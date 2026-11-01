@@ -1,6 +1,6 @@
 # ajia-learn autolearn — plan
 
-Status: M0–M3 implemented; M4 hardening pending.
+Status: M0–M4 implemented; rollout and ongoing hardening remain.
 
 Visual plan: [ajia-learn-autolearn.html](ajia-learn-autolearn.html)
 
@@ -242,7 +242,7 @@ until approved.
 | M1 | OpenCode V2 plugin: completion trigger, host `generate`, auto-install to `~/.agents/skills`, `ctx.skill.reload`, memory injection — **implemented** | One automatic review; skill installed and visible next turn; scan/quarantine/backup/rollback exercised; no core/user writes |
 | M2 | Claude Code `Stop` + `claude -p`; Codex `Stop` + `codex exec`; memory injection — **implemented** | Same acceptance on each host; per-host disable |
 | M3 | Pi/OMP adapters; repetition signal; dedupe/merge; curator (pin/adopt/archive/restore/prune/rollback); outcome metrics — **implemented** | No duplicates; stale/archive works; rollback works |
-| M4 | Privacy/redaction, injection eval, cost caps, docs, rollout | Security fixtures pass; per-day budget respected |
+| M4 | Privacy/redaction, injection eval, cost caps, docs, rollout — **implemented** | Security fixtures pass; per-day budget respected |
 
 ## Confirmed defaults
 

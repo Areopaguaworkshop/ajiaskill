@@ -325,6 +325,7 @@ Promotion rules:
 | `ajia review --transcript <file> [--plan <json>]` | Review a transcript and write or install a learned skill. |
 | `ajia learning status/pause/resume` | Inspect or pause automatic learning. |
 | `ajia learning quarantine list/show/release` | Inspect or release quarantined learned skills. |
+| `ajia learning budget` | Show the daily review budget. |
 | `ajia learning suggest` | Suggest repeated tasks from local routing/search logs. |
 | `ajia learning ledger/rollback/approve/adopt/pin` | Inspect, restore, approve, or protect learned skills. |
 | `ajia learning archive/restore/prune` | Curate learned skills without deleting them. |
@@ -367,7 +368,7 @@ A profile selects sources, hosts, router thresholds, and safety policy. The
 default `personal` profile allows every enabled source. The `work` profile is a
 smaller example.
 
-## Learning runtime (M3)
+## Learning runtime (M4)
 
 `ajia review` is the host-neutral engine behind `ajia-learn`. It takes a transcript, or a `--plan` produced by a host model, writes a review-owned foundry candidate, scans it, and then installs to `~/.agents/skills`, quarantines it, or stages it for approval.
 
@@ -378,7 +379,7 @@ ajia learning quarantine list
 ajia learning rollback <slug>
 ```
 
-Automatic learning is enabled by default. `ajia learning pause` stops review and install without removing installed skills. M0 ships the engine, usage ledger, scan, quarantine, backup, ledger, rollback, and immutable core/user guards. M1 adds the OpenCode V2 plugin: install it with `ajia setup opencode-plugin --install` and restart OpenCode. M2 adds Claude Code and Codex hooks: `ajia setup claude-hooks --install` or `ajia setup codex-hooks --install`. M3 adds Pi/OMP extensions (`ajia setup pi-plugin --install`, `ajia setup omp-plugin --install`), repeated-task suggestions, near-duplicate refusal, and archive/restore/prune curator commands. The hooks review on `Stop`/`agent_end`, use the host model, and inject `~/.ajia/memory`. Codex asks you to trust the new hooks in `/hooks`.
+Automatic learning is enabled by default. `ajia learning pause` stops review and install without removing installed skills. M0 ships the engine, usage ledger, scan, quarantine, backup, ledger, rollback, and immutable core/user guards. M1 adds the OpenCode V2 plugin: install it with `ajia setup opencode-plugin --install` and restart OpenCode. M2 adds Claude Code and Codex hooks: `ajia setup claude-hooks --install` or `ajia setup codex-hooks --install`. M3 adds Pi/OMP extensions (`ajia setup pi-plugin --install`, `ajia setup omp-plugin --install`), repeated-task suggestions, near-duplicate refusal, and archive/restore/prune curator commands. M4 adds transcript redaction, a daily review budget, and an offline injection/safety eval. The hooks review on `Stop`/`agent_end`, use the host model, and inject `~/.ajia/memory`. Codex asks you to trust the new hooks in `/hooks`.
 
 ## Native-first
 
@@ -439,6 +440,7 @@ python3 -m unittest discover -s tests -v
 python3 scripts/validate-skills.py
 python3 scripts/eval-routing.py --verbose
 python3 scripts/eval-routing.py --cases evals/routing-heldout.jsonl --body --verbose
+python3 scripts/eval-learning.py
 scripts/test_mcp_hosts.py
 ./install.sh --check
 ```

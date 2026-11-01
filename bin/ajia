@@ -113,6 +113,7 @@ def paths(home: Path) -> dict[str, Path]:
         "quarantine": home / "learning" / "quarantine",
         "pending": home / "learning" / "pending",
         "ledger": home / "learning" / "ledger.jsonl",
+        "learning_state": home / "learning" / "state.json",
         "blobs": home / "learning" / "blobs",
         "backups": home / "backups",
     }
@@ -3515,6 +3516,7 @@ LEARNING_DEFAULTS = {
     "max_input_chars": 120000,
     "max_body_chars": 30000,
     "min_confidence": 0.5,
+    "max_reviews_per_day": 50,
 }
 
 
@@ -3565,6 +3567,69 @@ def learning_counts(home: Path, config: dict[str, Any]) -> dict[str, int]:
         "installed": installed,
         "ledger_entries": len(learning_ledger_entries(home)),
     }
+
+
+def learning_budget(home: Path, config: dict[str, Any] | None = None) -> dict[str, Any]:
+    config = config or learning_config(home)
+    state = read_json(paths(home)["learning_state"], {})
+    if not isinstance(state, dict):
+        state = {}
+    today = datetime.now(timezone.utc).date().isoformat()
+    used = int(state.get("reviews", 0) or 0) if state.get("date") == today else 0
+    limit = max(0, int(config.get("max_reviews_per_day", 50) or 50))
+    return {
+        "schema": 1,
+        "date": today,
+        "used": used,
+        "limit": limit,
+        "allowed": limit == 0 or used < limit,
+    }
+
+
+def record_learning_review(home: Path) -> None:
+    p = paths(home)
+    state = read_json(p["learning_state"], {})
+    if not isinstance(state, dict):
+        state = {}
+    today = datetime.now(timezone.utc).date().isoformat()
+    used = int(state.get("reviews", 0) or 0) if state.get("date") == today else 0
+    write_json(
+        p["learning_state"],
+        {"schema": 1, "date": today, "reviews": used + 1, "updated_at": now_iso()},
+    )
+
+
+REDACT_PATTERNS = [
+    (re.compile(r"gh[pousr]_[A-Za-z0-9]{20,}"), "[REDACTED_GITHUB_TOKEN]"),
+    (re.compile(r"sk-[A-Za-z0-9]{20,}"), "[REDACTED_API_KEY]"),
+    (re.compile(r"AKIA[0-9A-Z]{16}"), "[REDACTED_AWS_KEY]"),
+    (
+        re.compile(
+            r"(?i)(api[_-]?key|access[_-]?token|secret|password)\s*[:=]\s*['\"]?[A-Za-z0-9_./+=-]{8,}"
+        ),
+        r"\1=[REDACTED]",
+    ),
+    (re.compile(r"(?i)bearer\s+[A-Za-z0-9._~+/=-]{12,}"), "Bearer [REDACTED]"),
+    (
+        re.compile(
+            r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----",
+            re.S,
+        ),
+        "[REDACTED_PRIVATE_KEY]",
+    ),
+    (
+        re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"),
+        "[REDACTED_EMAIL]",
+    ),
+]
+
+
+def redact_text(text: str) -> str:
+    if os.environ.get("AJIA_REVIEW_REDACT", "1").lower() in {"0", "false", "no"}:
+        return text
+    for pattern, replacement in REDACT_PATTERNS:
+        text = pattern.sub(replacement, text)
+    return text
 
 
 def bump_usage(home: Path, record_id: str) -> None:
@@ -3683,6 +3748,7 @@ def parse_json_content(content: str) -> dict[str, Any]:
 
 
 def review_plan_from_endpoint(transcript: str, config: dict[str, Any]) -> dict[str, Any]:
+    transcript = redact_text(transcript)
     url = os.environ.get("AJIA_REVIEW_URL", "").strip()
     if not url:
         raise SkillError("set AJIA_REVIEW_URL or pass --plan")
@@ -4176,6 +4242,11 @@ def cmd_review(home: Path, args: argparse.Namespace) -> int:
     config = learning_config(home)
     if not bool(config.get("enabled", True)):
         raise SkillError("learning is paused; run: ajia learning resume")
+    budget = learning_budget(home, config)
+    if not budget["allowed"]:
+        raise SkillError(
+            f"daily review budget reached ({budget['used']}/{budget['limit']}); use `ajia learning budget`"
+        )
     transcript = read_review_transcript(args.transcript, int(config.get("max_input_chars", 120000)))
     if args.plan:
         plan = read_json(Path(args.plan).expanduser(), {})
@@ -4184,6 +4255,7 @@ def cmd_review(home: Path, args: argparse.Namespace) -> int:
     else:
         plan = review_plan_from_endpoint(transcript, config)
     result = review_apply_plan(home, plan, args.host, args.builtin, config)
+    record_learning_review(home)
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
@@ -4431,6 +4503,13 @@ def learning_prune(home: Path, config: dict[str, Any], days: int) -> list[dict[s
 def cmd_learning(home: Path, args: argparse.Namespace) -> int:
     config = learning_config(home)
     command = args.learning_command
+    if command == "budget":
+        budget = learning_budget(home, config)
+        if args.json:
+            print(json.dumps(budget, ensure_ascii=False, indent=2))
+        else:
+            print(f"reviews: {budget['used']}/{budget['limit']} ({budget['date']})")
+        return 0
     if command == "suggest":
         suggestions = learning_suggestions(home, args.threshold)
         if args.json:
@@ -4708,6 +4787,8 @@ def build_parser() -> argparse.ArgumentParser:
     learning_pause.add_argument("--json", action="store_true")
     learning_resume = learning_sub.add_parser("resume", help="Resume review and auto-install.")
     learning_resume.add_argument("--json", action="store_true")
+    learning_budget = learning_sub.add_parser("budget", help="Show the daily review budget.")
+    learning_budget.add_argument("--json", action="store_true")
     learning_suggest = learning_sub.add_parser("suggest", help="Suggest repeated tasks from local logs.")
     learning_suggest.add_argument("--threshold", type=int, default=2)
     learning_suggest.add_argument("--json", action="store_true")

@@ -1174,5 +1174,81 @@ class AjiaTest(unittest.TestCase):
 
 
 
+    def test_learning_budget_enforced(self) -> None:
+        (self.home / "learning.json").write_text(
+            json.dumps({"schema": 1, "max_reviews_per_day": 1}),
+            encoding="utf-8",
+        )
+        transcript = Path(self.tmp.name) / "transcript.txt"
+        transcript.write_text("user: remember this\n", encoding="utf-8")
+        env = self.learning_env()
+        first_plan = self.write_learning_plan(
+            "budget-first",
+            {
+                "action": "create",
+                "name": "budget-one",
+                "description": "First budget skill.",
+                "body": "# One\n",
+                "license": "MIT",
+                "confidence": 0.9,
+            },
+        )
+        second_plan = self.write_learning_plan(
+            "budget-second",
+            {
+                "action": "create",
+                "name": "budget-two",
+                "description": "Second budget skill.",
+                "body": "# Two\n",
+                "license": "MIT",
+                "confidence": 0.9,
+            },
+        )
+        first = self.run_cli(
+            "review", "--transcript", str(transcript), "--plan", str(first_plan),
+            "--builtin", "--json", env_overrides=env,
+        )
+        self.assertEqual(first.returncode, 0, first.stderr)
+        second = self.run_cli(
+            "review", "--transcript", str(transcript), "--plan", str(second_plan),
+            "--builtin", "--json", env_overrides=env,
+        )
+        self.assertEqual(second.returncode, 1)
+        self.assertIn("daily review budget reached", second.stderr)
+        budget = self.run_cli("learning", "budget", "--json", env_overrides=env)
+        self.assertEqual(json.loads(budget.stdout)["used"], 1)
+
+    def test_hook_redacts_before_review_model(self) -> None:
+        capture = Path(self.tmp.name) / "captured.txt"
+        fake = Path(self.tmp.name) / "capture-model.py"
+        fake.write_text(
+            "import json,sys\n"
+            f"open({str(capture)!r},'w').write(sys.stdin.read())\n"
+            "print(json.dumps({'action':'noop'}))\n",
+            encoding="utf-8",
+        )
+        transcript = Path(self.tmp.name) / "secret.jsonl"
+        transcript.write_text(
+            json.dumps({"type": "user", "message": {"role": "user", "content": "token=ghp_abcdefghijklmnopqrstuvwxyz123456"}})
+            + "\n",
+            encoding="utf-8",
+        )
+        result = self.run_hook(
+            ["--host", "claude", "--review", "--model-cmd", f"{sys.executable} {fake}"],
+            {
+                "session_id": "s1",
+                "transcript_path": str(transcript),
+                "cwd": str(ROOT),
+                "stop_hook_active": False,
+            },
+            {"AJIA_LEARNING_INSTALL_ROOT": str(Path(self.tmp.name) / "installed")},
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        captured = capture.read_text(encoding="utf-8")
+        self.assertNotIn("ghp_abcdefghijklmnopqrstuvwxyz123456", captured)
+        self.assertIn("[REDACTED_GITHUB_TOKEN]", captured)
+
+
+
 if __name__ == "__main__":
     unittest.main()
