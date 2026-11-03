@@ -3999,7 +3999,7 @@ def cmd_learn_new(home: Path, args: argparse.Namespace, config: dict[str, Any]) 
             "body": Path(args.body).expanduser().read_text(encoding="utf-8"),
             "license": args.license or "MIT",
         }
-    elif sys.stdin.isatty():
+    elif sys.stdin.isatty() and not args.json:
         plan = interactive_user_skill(idea)
         if not plan:
             print("cancelled")
@@ -4051,7 +4051,7 @@ def cmd_learn_edit(home: Path, args: argparse.Namespace, config: dict[str, Any])
             "body": Path(args.body).expanduser().read_text(encoding="utf-8"),
             "license": args.license or fields.get("license", "MIT"),
         }
-    elif sys.stdin.isatty():
+    elif sys.stdin.isatty() and not args.json:
         plan = {
             "action": "patch",
             "name": slug,
