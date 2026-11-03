@@ -29,6 +29,60 @@ Rules:
 - Three patches per skill per week; a fourth needs `--approve`.
 - Scan before install. Approval or `auto_install` still gates the host copy.
 
+## User-requested creation
+
+Use this when the user asks to create a skill, not when review found one.
+
+1. Ask five questions, or run `ajia learn --new "<idea>" --json` for the
+   structured brief:
+   - What does it do? One sentence, third person.
+   - When should the agent use it? Give three phrases users would say.
+   - What are the exact steps, commands, or source of truth?
+   - How does the agent verify success?
+   - When should the skill not be used?
+2. Write the body to a file and run:
+   `ajia learn --new "<idea>" --name <slug> --description "<what + when>" --body draft.md`
+3. Read the scan and warnings. Then `ajia use foundry/<slug>` and
+   `ajia promote foundry/<slug> --dry-run`. Never auto-promote.
+
+The interactive path runs the same questions when stdin is a TTY. Without a
+TTY, `--new` prints the brief and writes nothing.
+
+Authoring rules:
+
+- Description: third person, what it does and when to use it, real trigger
+  phrases, under 1024 characters.
+- Body: under 500 lines. Move conditional detail to `references/` one level
+  deep; link each reference from `SKILL.md`.
+- Match specificity to risk: exact commands for fragile steps, judgment for
+  open-ended work. Give a default, not a menu.
+- Include a verification step and a gotchas or failure-modes section.
+- Test the skill on three real tasks before promoting it.
+
+## Edit an existing skill
+
+User-owned foundry skill:
+
+```bash
+ajia learn --edit <slug> --body revised.md
+ajia learn --edit <slug> --body revised.md --yes
+```
+
+The first command shows a diff and writes nothing. `--yes` backs up the old
+copy, applies the edit, re-indexes, and re-scans. A blocking scan restores the
+backup. If the skill is installed, re-promote it after the edit.
+
+A learn-owned skill must be taken out of the automatic lane first:
+
+```bash
+ajia learning adopt <slug>   # or: ajia learning pin <slug>
+ajia learn --edit <slug> --body revised.md --yes
+```
+
+`ajia learning adopt` and `pin` make the skill user-owned, so future review
+patches will not overwrite it. `ajia learning rollback <slug>` or the backup
+path restores the previous version.
+
 ## Cross-agent foundry
 
 1. Inspect the source: a repo, a document, a URL, or the workflow just completed.

@@ -17,6 +17,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import uuid
 from collections import Counter
 from urllib.parse import urlencode, urlparse
@@ -3571,8 +3572,522 @@ def cmd_learn_author(home: Path, args: argparse.Namespace, config: dict[str, Any
     return 0
 
 
+USER_SKILL_QUESTIONS = [
+    "What should the skill do? Write one sentence in the third person.",
+    "When should the agent use it? Give three phrases users would actually say.",
+    "What are the exact steps, commands, or source of truth?",
+    "How does the agent verify success?",
+    "When should the skill not be used?",
+]
+
+USER_SKILL_GUIDANCE = [
+    "Write the description in the third person: what it does and when to use it.",
+    "Put the real trigger phrases in the description; it is the discovery surface.",
+    "Keep SKILL.md under 500 lines. Move conditional detail to references/ one level deep.",
+    "Match specificity to risk: exact commands for fragile steps, judgment elsewhere.",
+    "Add a verification step and a gotchas or failure-modes section.",
+    "Test the skill on three real tasks before promoting it.",
+]
+
+
+def user_skill_brief(idea: str) -> dict[str, Any]:
+    name = "my-skill"
+    return {
+        "schema": 1,
+        "mode": "brief",
+        "idea": idea,
+        "questions": USER_SKILL_QUESTIONS,
+        "guidance": USER_SKILL_GUIDANCE,
+        "template": (
+            "---\n"
+            f"name: {name}\n"
+            "description: What it does. Use when the user asks for trigger one, trigger two, or trigger three.\n"
+            "license: MIT\n"
+            "---\n\n"
+            "# Skill title\n\n"
+            "## When to use\n\n"
+            "Name the task, the trigger phrases, and the preconditions.\n\n"
+            "## Steps\n\n"
+            "1. Exact first step.\n"
+            "2. Exact next step.\n\n"
+            "## Verify\n\n"
+            "Run the check that proves success.\n\n"
+            "## Failure modes\n\n"
+            "- The non-obvious mistake to avoid.\n"
+        ),
+        "next": "ajia learn --new '<idea>' --name <slug> --description <text> --body <file>",
+    }
+
+
+def print_user_skill_brief(brief: dict[str, Any]) -> None:
+    print("Guided skill draft")
+    if brief.get("idea"):
+        print(f"idea: {brief['idea']}")
+    print("")
+    print("Answer these questions:")
+    for index, question in enumerate(brief["questions"], 1):
+        print(f"  {index}. {question}")
+    print("")
+    print("Authoring rules:")
+    for rule in brief["guidance"]:
+        print(f"  - {rule}")
+    print("")
+    print("Template:")
+    print(brief["template"])
+    print(f"Next: {brief['next']}")
+
+
+def user_skill_slug(text: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", text.strip().lower()).strip("-")
+    slug = slug[:64].strip("-")
+    if not slug:
+        raise SkillError("cannot derive a skill name; pass --name")
+    return review_slug(slug)
+
+
+def validate_user_skill_plan(plan: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(plan, dict):
+        raise SkillError("skill plan must be an object")
+    action = str(plan.get("action") or "create").strip().lower()
+    if action not in {"create", "patch"}:
+        raise SkillError(f"unknown user skill action: {action}")
+    result = dict(plan)
+    result["action"] = action
+    result["name"] = review_slug(plan.get("name"))
+    description = " ".join(str(plan.get("description") or "").split())
+    if not description:
+        raise SkillError("skill needs a description")
+    if len(description) > 1024:
+        raise SkillError("skill description is too long; keep it under 1024 characters")
+    if re.search(r"<[^>]+>", description):
+        raise SkillError("skill description must not contain XML tags")
+    body = str(plan.get("body") or "").strip()
+    if body.startswith("---"):
+        raise SkillError("skill body must not include frontmatter")
+    if not body:
+        raise SkillError("skill needs a body")
+    lines = len(body.splitlines())
+    max_lines = int(config.get("max_user_skill_lines", 500))
+    if lines > max_lines:
+        raise SkillError(f"skill body is {lines} lines; keep it under {max_lines}")
+    if len(body) > int(config.get("max_user_body_chars", 60000)):
+        raise SkillError("skill body is too long")
+    lower = body.lower()
+    if not any(token in lower for token in ("verify", "verification", "test", "check")):
+        raise SkillError("skill body needs a verification step")
+    result["description"] = description
+    result["body"] = body
+    result["license"] = str(plan.get("license") or "MIT").strip() or "MIT"
+    warnings = []
+    desc_lower = description.lower()
+    if desc_lower.startswith(("i ", "you ", "we ")):
+        warnings.append("write the description in the third person")
+    if "use when" not in desc_lower and "when " not in desc_lower:
+        warnings.append("say when to use the skill in the description")
+    if len(description) < 20:
+        warnings.append("make the description more specific")
+    if not re.search(r"(?m)^\s*(1\.|[-*]\s|##\s*Steps)", body):
+        warnings.append("add explicit steps or a numbered procedure")
+    if "failure" not in lower and "gotcha" not in lower:
+        warnings.append("add a gotchas or failure-modes section")
+    result["warnings"] = warnings
+    return result
+
+
+def user_skill_conflict(home: Path, plan: dict[str, Any]) -> None:
+    slug = str(plan["name"])
+    catalog = dedupe_records(load_catalog(home, quiet=True))
+    for record in catalog:
+        other = str(record.get("name", ""))
+        candidate = Path(str(record.get("source_path", "")))
+        ratio = max(
+            difflib.SequenceMatcher(None, slug, other).ratio(),
+            difflib.SequenceMatcher(
+                None,
+                str(plan.get("description", "")).lower(),
+                str(record.get("description", "")).lower(),
+            ).ratio(),
+            difflib.SequenceMatcher(
+                None,
+                str(plan.get("body", "")).lower()[:4000],
+                skill_body(record)[:4000].lower(),
+            ).ratio(),
+        )
+        if ratio < 0.82:
+            continue
+        if review_owned(candidate):
+            raise SkillError(
+                f"similar learn-owned skill exists: {other}; use `ajia learn --edit {other}` or patch it"
+            )
+        raise SkillError(
+            f"covered by existing skill {record.get('id')}: {other}; narrow the scope or edit that skill"
+        )
+
+
+def user_create_skill(
+    home: Path,
+    plan: dict[str, Any],
+    config: dict[str, Any],
+    builtin: bool,
+) -> dict[str, Any]:
+    plan = validate_user_skill_plan(plan, config)
+    slug = str(plan["name"])
+    foundry_dir = paths(home)["foundry"] / slug
+    if foundry_dir.exists():
+        raise SkillError(f"skill already exists: {slug}; use `ajia learn --edit {slug}`")
+    user_skill_conflict(home, plan)
+    foundry_dir.mkdir(parents=True, exist_ok=True)
+    (foundry_dir / "SKILL.md").write_text(render_review_skill(plan), encoding="utf-8")
+    content_hash, _, _ = skill_hash(foundry_dir)
+    sidecar = {
+        "schema": 1,
+        "origin": "user",
+        "generated_by": "user",
+        "last_author": "user",
+        "state": "candidate",
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+        "content_hash": content_hash,
+        "adopted": False,
+        "pinned": False,
+    }
+    write_json(foundry_dir / ".ajia-learn.json", sidecar)
+    build_catalog(home, quiet=True)
+    record = learning_scan_record(home, slug)
+    scan = scan_skill(home, record, builtin_only=builtin)
+    write_json(home / "scans" / f"foundry__{slug}.json", scan)
+    if scan["verdict"] == "block":
+        qdir = paths(home)["quarantine"] / slug
+        if qdir.exists():
+            shutil.rmtree(qdir)
+        qdir.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(foundry_dir), str(qdir))
+        write_json(qdir / "scan.json", scan)
+        write_json(
+            qdir / "quarantine.json",
+            {"reason": "user-authored skill blocked by scan", "at": now_iso(), "verdict": scan["verdict"]},
+        )
+        build_catalog(home, quiet=True)
+        entry = learning_ledger_append(
+            home,
+            {
+                "action": "user-create",
+                "id": f"foundry/{slug}",
+                "slug": slug,
+                "status": "quarantined",
+                "scan": scan["verdict"],
+                "origin": "user",
+                "foundry_after": None,
+            },
+        )
+        return {
+            "schema": 1,
+            "status": "quarantined",
+            "id": f"foundry/{slug}",
+            "scan": scan["verdict"],
+            "path": str(qdir),
+            "warnings": plan.get("warnings", []),
+            "entry_id": entry["entry_id"],
+        }
+    entry = learning_ledger_append(
+        home,
+        {
+            "action": "user-create",
+            "id": f"foundry/{slug}",
+            "slug": slug,
+            "status": "candidate",
+            "scan": scan["verdict"],
+            "origin": "user",
+            "foundry_after": content_hash,
+        },
+    )
+    return {
+        "schema": 1,
+        "status": "candidate",
+        "id": f"foundry/{slug}",
+        "scan": scan["verdict"],
+        "path": str(foundry_dir),
+        "warnings": plan.get("warnings", []),
+        "entry_id": entry["entry_id"],
+    }
+
+
+def user_edit_skill(
+    home: Path,
+    slug: str,
+    plan: dict[str, Any],
+    config: dict[str, Any],
+    builtin: bool,
+    show_diff: bool,
+    apply: bool,
+) -> dict[str, Any]:
+    plan = validate_user_skill_plan(plan, config)
+    plan["action"] = "patch"
+    plan["name"] = slug
+    foundry_dir = paths(home)["foundry"] / slug
+    if not foundry_dir.is_dir():
+        raise SkillError(f"skill not found: {slug}")
+    if review_owned(foundry_dir):
+        raise SkillError(
+            f"{slug} is learn-owned; run `ajia learning adopt {slug}` or `ajia learning pin {slug}`, then retry"
+        )
+    old_text = (foundry_dir / "SKILL.md").read_text(encoding="utf-8")
+    new_text = render_review_skill(plan)
+    if new_text == old_text:
+        return {"schema": 1, "status": "unchanged", "id": f"foundry/{slug}", "path": str(foundry_dir)}
+    diff_text = "".join(
+        difflib.unified_diff(
+            old_text.splitlines(keepends=True),
+            new_text.splitlines(keepends=True),
+            fromfile=f"foundry/{slug}/SKILL.md",
+            tofile=f"foundry/{slug}/SKILL.md (edited)",
+        )
+    )
+    if not apply:
+        return {
+            "schema": 1,
+            "status": "dry-run",
+            "id": f"foundry/{slug}",
+            "path": str(foundry_dir),
+            "diff": diff_text,
+        }
+    backup_root, before_foundry, before_installed = learning_backup(home, config, slug)
+    foundry_dir.mkdir(parents=True, exist_ok=True)
+    (foundry_dir / "SKILL.md").write_text(new_text, encoding="utf-8")
+    content_hash, _, _ = skill_hash(foundry_dir)
+    sidecar = review_sidecar(foundry_dir)
+    sidecar.update(
+        {
+            "schema": 1,
+            "origin": sidecar.get("origin") or "user",
+            "generated_by": sidecar.get("generated_by") or "user",
+            "last_author": "user",
+            "state": sidecar.get("state") or "candidate",
+            "updated_at": now_iso(),
+            "content_hash": content_hash,
+        }
+    )
+    write_json(foundry_dir / ".ajia-learn.json", sidecar)
+    build_catalog(home, quiet=True)
+    record = learning_scan_record(home, slug)
+    scan = scan_skill(home, record, builtin_only=builtin)
+    write_json(home / "scans" / f"foundry__{slug}.json", scan)
+    if scan["verdict"] == "block":
+        restore_learning_backup(home, config, slug, backup_root)
+        build_catalog(home, quiet=True)
+        raise SkillError(f"scan blocked the edit; restored the backup at {backup_root}")
+    entry = learning_ledger_append(
+        home,
+        {
+            "action": "user-edit",
+            "id": f"foundry/{slug}",
+            "slug": slug,
+            "status": "candidate",
+            "scan": scan["verdict"],
+            "origin": "user",
+            "backup": str(backup_root),
+            "foundry_before": before_foundry,
+            "foundry_after": content_hash,
+            "installed_before": before_installed,
+            "installed_after": None,
+        },
+    )
+    return {
+        "schema": 1,
+        "status": "candidate",
+        "id": f"foundry/{slug}",
+        "scan": scan["verdict"],
+        "path": str(foundry_dir),
+        "backup": str(backup_root),
+        "warnings": plan.get("warnings", []),
+        "diff": diff_text if show_diff else "",
+        "entry_id": entry["entry_id"],
+    }
+
+
+def prompt_text(label: str, default: str = "") -> str:
+    suffix = f" [{default}]" if default else ""
+    value = input(f"{label}{suffix}: ").strip()
+    return value or default
+
+
+def prompt_block(label: str) -> str:
+    print(f"{label} One per line; a blank line ends.")
+    lines = []
+    while True:
+        line = input("> ").strip()
+        if not line:
+            break
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def interactive_user_skill(idea: str) -> dict[str, Any] | None:
+    description = prompt_text("What should the skill do?")
+    if not description:
+        raise SkillError("a description is required")
+    triggers = prompt_text("Name three trigger phrases")
+    steps = prompt_block("Steps:")
+    verify = prompt_text("How do you verify success?")
+    non_goals = prompt_text("When should it not be used?")
+    name = prompt_text("Name (lowercase-hyphen)", user_skill_slug(description))
+    license = prompt_text("License", "MIT")
+    title = " ".join(part.capitalize() for part in name.split("-"))
+    body = (
+        f"# {title}\n\n"
+        "## When to use\n\n"
+        f"{description}\n\n"
+        f"Use when the user says: {triggers}.\n\n"
+        "## Steps\n\n"
+        f"{steps}\n\n"
+        "## Verify\n\n"
+        f"{verify}\n\n"
+        "## Failure modes\n\n"
+        f"- {non_goals}\n"
+    )
+    print("\nPreview:\n")
+    print(body)
+    if prompt_text("Write this candidate? [y/N]").lower() not in {"y", "yes"}:
+        return None
+    return {
+        "action": "create",
+        "name": name,
+        "description": description,
+        "body": body,
+        "license": license,
+    }
+
+
+def edit_user_body(old_text: str) -> str:
+    parts = old_text.split("---\n", 2)
+    body = parts[2].strip() if len(parts) == 3 else old_text.strip()
+    editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "vi"
+    handle = tempfile.NamedTemporaryFile("w+", suffix=".md", delete=False, encoding="utf-8")
+    try:
+        handle.write(body)
+        handle.close()
+        result = subprocess.run([editor, handle.name], check=False)
+        if result.returncode != 0:
+            raise SkillError(f"editor exited {result.returncode}")
+        return Path(handle.name).read_text(encoding="utf-8").strip()
+    finally:
+        Path(handle.name).unlink(missing_ok=True)
+
+
+def cmd_learn_new(home: Path, args: argparse.Namespace, config: dict[str, Any]) -> int:
+    idea = str(args.new or "").strip()
+    if args.plan and args.body:
+        raise SkillError("pass --plan or --body, not both")
+    if args.plan:
+        plan = read_json(Path(args.plan).expanduser(), {})
+        if not isinstance(plan, dict) or not plan:
+            raise SkillError(f"cannot read skill plan: {args.plan}")
+        plan.setdefault("action", "create")
+        if args.name:
+            plan["name"] = args.name
+        if args.description:
+            plan["description"] = args.description
+        if args.license:
+            plan["license"] = args.license
+    elif args.body:
+        if not args.name or not args.description:
+            raise SkillError("--body needs --name and --description")
+        plan = {
+            "action": "create",
+            "name": args.name,
+            "description": args.description,
+            "body": Path(args.body).expanduser().read_text(encoding="utf-8"),
+            "license": args.license or "MIT",
+        }
+    elif sys.stdin.isatty():
+        plan = interactive_user_skill(idea)
+        if not plan:
+            print("cancelled")
+            return 0
+    else:
+        brief = user_skill_brief(idea)
+        if args.json:
+            print(json.dumps(brief, ensure_ascii=False, indent=2))
+        else:
+            print_user_skill_brief(brief)
+        return 0
+    result = user_create_skill(home, plan, config, args.builtin)
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(f"created: {result['id']} ({result['status']})")
+        print(f"scan: {result['scan']}")
+        for warning in result.get("warnings", []):
+            print(f"warning: {warning}")
+        print(f"path: {result['path']}")
+        if result["status"] == "candidate":
+            print(f"next: ajia use {result['id']}")
+            print(f"      ajia promote {result['id']} --dry-run")
+    return 0
+
+
+def cmd_learn_edit(home: Path, args: argparse.Namespace, config: dict[str, Any]) -> int:
+    if args.plan and args.body:
+        raise SkillError("pass --plan or --body, not both")
+    slug = review_slug(args.edit)
+    foundry_dir = paths(home)["foundry"] / slug
+    if not foundry_dir.is_dir():
+        raise SkillError(f"skill not found: {slug}")
+    old_text = (foundry_dir / "SKILL.md").read_text(encoding="utf-8")
+    fields = parse_frontmatter(old_text)
+    if args.plan:
+        plan = read_json(Path(args.plan).expanduser(), {})
+        if not isinstance(plan, dict) or not plan:
+            raise SkillError(f"cannot read skill plan: {args.plan}")
+        plan["action"] = "patch"
+        plan["name"] = slug
+        plan.setdefault("description", fields.get("description", ""))
+        plan.setdefault("license", fields.get("license", "MIT"))
+    elif args.body:
+        plan = {
+            "action": "patch",
+            "name": slug,
+            "description": args.description or fields.get("description", ""),
+            "body": Path(args.body).expanduser().read_text(encoding="utf-8"),
+            "license": args.license or fields.get("license", "MIT"),
+        }
+    elif sys.stdin.isatty():
+        plan = {
+            "action": "patch",
+            "name": slug,
+            "description": args.description or fields.get("description", ""),
+            "body": edit_user_body(old_text),
+            "license": args.license or fields.get("license", "MIT"),
+        }
+    else:
+        raise SkillError("pass --body or --plan, or run interactively with $EDITOR")
+    result = user_edit_skill(home, slug, plan, config, args.builtin, args.diff, args.yes)
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(f"edit: {result['status']} {result['id']}")
+        if result.get("diff"):
+            print(result["diff"])
+        if result.get("backup"):
+            print(f"backup: {result['backup']}")
+        for warning in result.get("warnings", []):
+            print(f"warning: {warning}")
+        if result["status"] == "dry-run":
+            print("dry run; pass --yes to apply")
+        elif result["status"] == "candidate":
+            print(f"next: ajia use {result['id']}")
+            print(f"      ajia promote {result['id']} --dry-run")
+    return 0
+
+
 def cmd_learn(home: Path, args: argparse.Namespace) -> int:
     config = learning_config(home)
+    if args.new is not None and args.edit:
+        raise SkillError("pass --new or --edit, not both")
+    if args.new is not None:
+        return cmd_learn_new(home, args, config)
+    if args.edit:
+        return cmd_learn_edit(home, args, config)
     if args.queue:
         return cmd_learn_queue(home, args)
     if args.reject:
@@ -3589,6 +4104,11 @@ def cmd_learn(home: Path, args: argparse.Namespace) -> int:
         print("  ajia generated")
         return 0
     if not args.execute:
+        print("Create or edit a user-owned skill:")
+        print("  ajia learn --new \"<idea>\"")
+        print("  ajia learn --new \"<idea>\" --name <slug> --description <text> --body <file>")
+        print("  ajia learn --edit <slug> --body <file> [--yes]")
+        print("")
         print("Author a learned skill from a review lesson:")
         print("  ajia learn --queue")
         print("  ajia learn --from-lesson <id> --plan <skill.json>")
@@ -3726,6 +4246,8 @@ LEARNING_DEFAULTS = {
     "max_lessons_per_day": 3,
     "max_authored_per_day": 3,
     "max_skill_lines": 120,
+    "max_user_skill_lines": 500,
+    "max_user_body_chars": 60000,
     "max_patches_per_skill_per_week": 3,
     "min_rubric_score": 8,
 }
@@ -4302,9 +4824,9 @@ def render_review_skill(plan: dict[str, Any]) -> str:
     body = str(plan["body"]).strip()
     return (
         "---\n"
-        f"name: {plan['name']}\n"
-        f"description: {plan['description']}\n"
-        f"license: {plan['license']}\n"
+        f"name: {yaml_scalar(plan['name'])}\n"
+        f"description: {yaml_scalar(plan['description'])}\n"
+        f"license: {yaml_scalar(plan['license'])}\n"
         "---\n\n"
         f"{body}\n"
     )
@@ -5349,6 +5871,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     learn = sub.add_parser("learn", help="Author a learned skill, or use the Hermes and foundry paths.")
     learn.add_argument("source", nargs="*")
+    learn.add_argument("--new", metavar="IDEA", help="Start a guided user-authored skill draft.")
+    learn.add_argument("--edit", metavar="SLUG", help="Edit a user-owned foundry skill.")
+    learn.add_argument("--name", help="Skill slug for --new.")
+    learn.add_argument("--description", help="Skill description for --new or --edit.")
+    learn.add_argument("--body", help="Markdown body file for --new or --edit.")
+    learn.add_argument("--license", default=None, help="License for --new or --edit; defaults to MIT or the existing value.")
+    learn.add_argument("--diff", action="store_true", help="Show the edit diff before applying.")
+    learn.add_argument("--yes", action="store_true", help="Apply an edit after the diff.")
     learn.add_argument("--execute", action="store_true")
     learn.add_argument("--timeout", type=int, default=300)
     learn.add_argument("--json", action="store_true")

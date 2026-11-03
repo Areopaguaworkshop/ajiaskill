@@ -331,6 +331,9 @@ Promotion rules:
 | `ajia uninstall <id>` | Remove an owned promoted copy. |
 | `ajia sandbox <id> --run '<cmd>'` | Print or run a Docker sandbox command. |
 | `ajia learn '<source>'` | Print the Hermes `/learn` path and the foundry path. |
+| `ajia learn --new "<idea>"` | Start a guided user-authored skill draft; prints the brief when non-interactive. |
+| `ajia learn --new ... --name <slug> --description <text> --body <file>` | Write a user-owned foundry candidate, scan it, and print the promote plan. |
+| `ajia learn --edit <slug> --body <file>` | Show a diff for a user-owned skill; add `--yes` to back up, apply, and re-scan. |
 | `ajia learn --queue` | List proposed review lessons. |
 | `ajia learn --from-lesson <id> --plan <json>` | Author one lesson into a skill; `--approve` overrides the patch cap. |
 | `ajia learn --audit` | Report learned skill quality, use, and patch churn. |
@@ -386,6 +389,8 @@ smaller example.
 `ajia review` is the detector. It takes a transcript, or a `--plan` produced by a host model, validates an evidence-backed lesson, and appends it to `~/.ajia/learning/lessons/`. It cannot write a `SKILL.md` or install anything.
 
 `ajia learn` is the only author. It takes a proposed lesson, scores the skill against a five-part rubric, deduplicates against the whole catalog, scans it, and writes a learn-owned foundry candidate. Installation is gated by `auto_install` and `require_approval`.
+
+A user can also ask for a skill directly. `ajia learn --new` guides the five authoring questions and writes a user-owned candidate; `ajia learn --edit` shows a diff, backs up, applies, and re-scans. User-owned skills are never auto-patched by review. The authoring rules follow the Anthropic Agent Skills and OpenAI `skill-creator` guidance: third-person description with trigger phrases, under 500 lines, progressive disclosure, exact steps for fragile work, verification, and gotchas.
 
 ```bash
 ajia learn --queue
