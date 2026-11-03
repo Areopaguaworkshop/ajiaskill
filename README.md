@@ -2,7 +2,7 @@
 
 A local skill platform for coding agents. State the feature or task; the host detects the right core skill and ajiaskill serves it. One catalog, one personal profile, one MCP server, and six hosts share the same setup.
 
-Status: **Phase 4: automatic learning and host integrations.** Catalog, search/use, MCP, safety, promotion, rollback, native inventory, remote source add, cross-agent foundry, profiles, automatic learning, and host integrations exist. Automatic skill detection, native-first routing, body and optional dense retrieval, an optional 0-2 gate, review-based learning, and one personal profile across six hosts exist. MCP is the default trigger; host plugins and hooks are opt-in through the setup commands.
+Status: **Phase 4: automatic learning and host integrations.** Catalog, search/use, MCP, safety, promotion, rollback, native inventory, remote source add, cross-agent foundry, profiles, automatic learning, and host integrations exist. Automatic skill detection, native-first routing, body and optional dense retrieval, an optional 0-2 gate, review-to-learn authoring, and one personal profile across six hosts exist. MCP is the default trigger; host plugins and hooks are opt-in through the setup commands.
 
 ## What it does
 
@@ -22,7 +22,7 @@ Status: **Phase 4: automatic learning and host integrations.** Catalog, search/u
 - **Foundry:** writes cross-agent candidates under `~/.ajia/foundry`, and indexes Hermes `/learn` skills as candidates.
 - **Profiles:** one personal profile controls sources, hosts, routing thresholds, and safety policy across every host.
 - **Generated metadata:** Hermes `created_by` and curator state, plus foundry candidates, appear in the catalog.
-- **Automatic learning:** `ajia review` and the host integrations review a finished turn, write a review-owned foundry candidate, scan or quarantine it, back up and install it to `~/.agents/skills`, and record a ledger entry. Durable memory is injected on later turns.
+- **Automatic learning:** `ajia review` and the host integrations review a finished turn and queue an evidence-backed lesson. `ajia learn` is the only author: it scores the lesson against a rubric, deduplicates against the catalog, writes a learn-owned foundry candidate, scans it, and either stages approval or installs it. Durable memory is injected on later turns.
 
 ## Automatic skill detection
 
@@ -264,7 +264,7 @@ ajia setup pi-plugin --install         # Pi extension
 ajia setup omp-plugin --install        # OMP extension
 ```
 
-`bin/ajia-hook` supports pre-turn and post-turn review for Codex, Claude, Pi, OMP, and Hermes. The integrations call `ajia route` before a turn and `ajia review` after it, fail open on timeout or error, and never install a skill without the engine's scan and gates. Re-run the same setup command after an upgrade: it replaces its own hook or link in place instead of adding a duplicate. See `adapters/README.md` for per-host caveats.
+`bin/ajia-hook` supports pre-turn and post-turn review for Codex, Claude, Pi, OMP, and Hermes. The integrations call `ajia route` before a turn, `ajia review` to queue a lesson after it, and `ajia learn` to author the skill. They fail open on timeout or error, and never install a skill without the engine's rubric, dedup, scan, and approval gates. Re-run the same setup command after an upgrade: it replaces its own hook or link in place instead of adding a duplicate. See `adapters/README.md` for per-host caveats.
 
 ## Safety stack
 
@@ -331,12 +331,16 @@ Promotion rules:
 | `ajia uninstall <id>` | Remove an owned promoted copy. |
 | `ajia sandbox <id> --run '<cmd>'` | Print or run a Docker sandbox command. |
 | `ajia learn '<source>'` | Print the Hermes `/learn` path and the foundry path. |
-| `ajia review --transcript <file> [--plan <json>]` | Review a transcript and write or install a learned skill. |
+| `ajia learn --queue` | List proposed review lessons. |
+| `ajia learn --from-lesson <id> --plan <json>` | Author one lesson into a skill; `--approve` overrides the patch cap. |
+| `ajia learn --audit` | Report learned skill quality, use, and patch churn. |
+| `ajia review --transcript <file> [--plan <json>]` | Review a transcript and queue a lesson; never writes or installs a skill. |
 | `ajia learning status/pause/resume` | Inspect or pause automatic learning. |
 | `ajia learning quarantine list/show/release` | Inspect or release quarantined learned skills. |
-| `ajia learning budget` | Show the daily review budget. |
+| `ajia learning budget` | Show review, lesson, and authoring budgets. |
 | `ajia learning suggest` | Suggest repeated tasks from local routing/search logs. |
-| `ajia learning ledger/rollback/approve/adopt/pin` | Inspect, restore, approve, or protect learned skills. |
+| `ajia learning ledger/rollback/adopt/pin` | Inspect, restore, or protect learned skills. |
+| `ajia learning approve/reject <slug>` | Install or reject a pending learned skill. |
 | `ajia learning archive/restore/prune` | Curate learned skills without deleting them. |
 | `ajia memory show/add/context` | Read, append, or inject durable user or project memory. |
 | `ajia policy` | Print the 2-line trigger policy. |
@@ -379,16 +383,25 @@ smaller example.
 
 ## Learning runtime (M4)
 
-`ajia review` is the host-neutral engine behind `ajia-learn`. It takes a transcript, or a `--plan` produced by a host model, writes a review-owned foundry candidate, scans it, and then installs to `~/.agents/skills`, quarantines it, or stages it for approval.
+`ajia review` is the detector. It takes a transcript, or a `--plan` produced by a host model, validates an evidence-backed lesson, and appends it to `~/.ajia/learning/lessons/`. It cannot write a `SKILL.md` or install anything.
+
+`ajia learn` is the only author. It takes a proposed lesson, scores the skill against a five-part rubric, deduplicates against the whole catalog, scans it, and writes a learn-owned foundry candidate. Installation is gated by `auto_install` and `require_approval`.
 
 ```bash
-ajia review --transcript transcript.txt --plan plan.json --builtin
+ajia learn --queue
+ajia learn --from-lesson L-20261103T... --plan skill.json
+ajia learn --from-lesson L-20261103T...
+ajia learn --audit
 ajia learning status
 ajia learning quarantine list
 ajia learning rollback <slug>
 ```
 
-Automatic learning is enabled by default. `ajia learning pause` stops review and install without removing installed skills. M0 ships the engine, usage ledger, scan, quarantine, backup, ledger, rollback, and immutable core/user guards. M1 adds the OpenCode V2 plugin: install it with `ajia setup opencode-plugin --install` and restart OpenCode. M2 adds Claude Code and Codex hooks: `ajia setup claude-hooks --install` or `ajia setup codex-hooks --install`. M3 adds Pi/OMP extensions (`ajia setup pi-plugin --install`, `ajia setup omp-plugin --install`), repeated-task suggestions, near-duplicate refusal, and archive/restore/prune curator commands. M4 adds transcript redaction, a daily review budget, and an offline injection/safety eval. The hooks review on `Stop`/`agent_end`, use the host model, and inject `~/.ajia/memory`. Codex asks you to trust the new hooks in `/hooks`.
+The default policy is strict: `auto_install: false`, `require_approval: true`, `min_confidence: 0.7`, 10 reviews and 3 authored skills per day, a 120-line body limit, an 8/10 rubric, and 3 patches per skill per week. Set `auto_install: true` only after a clean audit. `ajia learning pause` stops review and authoring without removing installed skills.
+
+Review and authoring share one ledger and one sidecar. New skills record `origin: learn`, `generated_by: learn`, `review_id`, `lesson_id`, `rubric`, and `quality_score`. Existing review-created skills stay `origin: review` for provenance and remain patchable by `ajia learn`.
+
+M0 ships the engine, usage ledger, scan, quarantine, backup, ledger, rollback, and immutable core/user guards. M1 adds the OpenCode V2 plugin: install it with `ajia setup opencode-plugin --install` and restart OpenCode. M2 adds Claude Code and Codex hooks: `ajia setup claude-hooks --install` or `ajia setup codex-hooks --install`. M3 adds Pi/OMP extensions (`ajia setup pi-plugin --install`, `ajia setup omp-plugin --install`), repeated-task suggestions, near-duplicate refusal, and archive/restore/prune curator commands. M4 adds the review-to-learn split, evidence-backed lessons, the quality rubric, whole-catalog dedup, patch caps, transcript redaction, daily budgets, and an offline injection/safety eval. The hooks review on `Stop`/`agent_end`, use the host model for both the lesson and the authoring call, and inject `~/.ajia/memory`. Codex asks you to trust the new hooks in `/hooks`.
 
 ## Native-first
 

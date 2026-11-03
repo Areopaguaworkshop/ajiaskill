@@ -2,6 +2,11 @@
 
 Status: M0–M4 implemented; rollout and ongoing hardening remain.
 
+Current implementation (2026-11-03): `ajia review` is capture-only. It queues
+an evidence-backed lesson under `~/.ajia/learning/lessons/`. `ajia learn` is the
+only author. Learn applies the 8/10 rubric, whole-catalog dedup, patch caps,
+scan, approval, and install gates. The old direct-write path is removed.
+
 Visual plan: [ajia-learn-autolearn.html](ajia-learn-autolearn.html)
 
 ## Goal
@@ -73,25 +78,45 @@ Hermes' automatic behavior is a host runtime, not a skill:
 
 ### 1. Review engine: `ajia review`
 
-Input: a normalized transcript (JSONL/Markdown) + host + recent intent log.
+Input: a normalized transcript (JSONL/Markdown) + host.
 
 Pipeline:
 
 1. Normalize messages, tool calls, outcomes.
-2. Detect signals: user correction/preference, new technique, loaded-skill
-   failure, repeated intent >= 2.
-3. Retrieve existing skills (`ajia_search`/catalog).
-4. Generate a strict plan with the host model or configured endpoint:
-   `noop | create | patch`, target, description, body/patch, evidence,
-   confidence.
-5. Validate: name, description length, body size, secret/PII scan, path
-   allowlist, diff cap, only review-owned targets.
-6. Write `~/.ajia/foundry/<slug>/SKILL.md` + `.ajia-learn.json`.
-7. Rebuild the catalog.
-8. Scan; if blocked, quarantine and do not install.
-9. Auto-install to the host root, atomically, with backup.
-10. Reload the host skill registry where possible; otherwise next session.
-11. Append a ledger entry and a compact report.
+2. Detect one of four signals: explicit correction, failed attempt with a
+   verified fix, repeated intent in two sessions, or a loaded skill that caused
+   a wrong step.
+3. Generate a strict lesson with the host model or configured endpoint:
+   `action | signal | scope | name | description | evidence | confidence`.
+   The review schema has no body.
+4. Validate the lesson: evidence count, signal, scope, name, description,
+   confidence, and no body. A body is a hard error.
+5. Append the lesson to `~/.ajia/learning/lessons/` with `status: proposed` or
+   `noop`.
+6. Record the review budget. Do not write foundry, scan, or install.
+
+### 1b. Authoring engine: `ajia learn`
+
+Input: one proposed lesson plus a skill plan from the host model or
+`AJIA_LEARN_URL`.
+
+Pipeline:
+
+1. Load the proposed lesson. Refuse a missing, rejected, or already authored
+   lesson.
+2. Generate or load the skill plan: action, name, description, body, license,
+   confidence, and rubric.
+3. Validate the rubric: five dimensions scored 0–2, total at least 8, no zero
+   on trigger or verification.
+4. Validate the body: no frontmatter, under 120 lines, one verification step.
+5. Deduplicate against the whole catalog: patch a learn-owned skill; reject a
+   duplicate of a core or user skill.
+6. Enforce the patch cap: three patches per skill per week; `--approve` overrides
+   the fourth.
+7. Write `~/.ajia/foundry/<slug>/SKILL.md` + `.ajia-learn.json` with
+   `origin: learn`, `review_id`, `lesson_id`, rubric, and quality score.
+8. Rebuild the catalog, scan, quarantine, stage approval, or install.
+9. Append a ledger entry and mark the lesson `authored` or `noop`.
 
 ### 2. Store and state
 

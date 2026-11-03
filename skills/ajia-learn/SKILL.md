@@ -1,12 +1,35 @@
 ---
 name: ajia-learn
-description: Use when a workflow or source should become a reusable skill; writes a cross-agent foundry candidate or captures a Hermes /learn skill, then indexes it for all hosts.
+description: Use when a workflow or source should become a reusable skill; author a review lesson with a rubric and catalog dedup, write a cross-agent foundry candidate, or capture a Hermes /learn skill.
 license: MIT
 ---
 
 # ajia-learn
 
-## Cross-agent foundry (default)
+## Review lessons (default)
+
+`ajia review` is the detector. It queues an evidence-backed lesson and never
+writes a `SKILL.md`. `ajia learn` is the only author.
+
+1. List proposed lessons with `ajia learn --queue`.
+2. Author one with `ajia learn --from-lesson <id> --plan <skill.json>`, or let
+   `ajia learn --from-lesson <id>` call `AJIA_LEARN_URL`.
+3. Check the result with `ajia learn --audit` and `ajia learning status`.
+4. Quarantined or pending skills need `ajia learning quarantine release`,
+   `ajia learning approve`, or `ajia learning reject`.
+
+Rules:
+
+- Review plans carry evidence, signal, scope, and confidence. They cannot carry
+  a body.
+- Learn requires an 8/10 rubric, a verification step, and a body under 120
+  lines.
+- Learn deduplicates against the whole catalog. Patch a learn-owned skill;
+  never duplicate a core or user skill.
+- Three patches per skill per week; a fourth needs `--approve`.
+- Scan before install. Approval or `auto_install` still gates the host copy.
+
+## Cross-agent foundry
 
 1. Inspect the source: a repo, a document, a URL, or the workflow just completed.
 2. Write a candidate to `~/.ajia/foundry/<slug>/SKILL.md`:
