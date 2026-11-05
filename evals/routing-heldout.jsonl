@@ -5,11 +5,9 @@
 {"query": "the settings screen feels cluttered", "skill": "impeccable"}
 {"query": "cut this response to the essentials", "skill": "caveman"}
 {"query": "avoid a new dependency for this fix", "skill": "ponytail"}
-{"query": "state your assumptions before changing this module", "skill": "karpathy-guidelines"}
 {"query": "I lose focus in long replies; give me the next action", "skill": "i-have-adhd"}
 {"query": "stress-test my plan before I build", "skill": "grill-me"}
 {"query": "check this skill for malware before I install it", "skill": "ajia-scan"}
 {"query": "install this skill into my host", "skill": "ajia-promote"}
-{"query": "run this skill script with no network", "skill": "ajia-sandbox"}
 {"query": "turn this workflow into a reusable skill", "skill": "ajia-learn"}
 {"query": "find a skill for reviewing accessibility", "skill": "ajia-find"}

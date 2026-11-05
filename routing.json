@@ -195,45 +195,6 @@
         "always_apply": false
       }
     },
-    "ajia-core/ajia-sandbox": {
-      "capabilities": [
-        "skill.sandbox"
-      ],
-      "triggers": {
-        "phrases": [
-          "sandbox this",
-          "run this skill script",
-          "untrusted script"
-        ],
-        "keywords": [
-          "sandbox",
-          "docker",
-          "script"
-        ],
-        "regex": []
-      },
-      "examples": {
-        "positive": [
-          "run this skill script in a sandbox",
-          "sandbox this untrusted script"
-        ],
-        "negative": []
-      },
-      "negative_triggers": [],
-      "file_globs": [],
-      "host_fit": [
-        "*"
-      ],
-      "requires": {
-        "tools": []
-      },
-      "priority": 65,
-      "routing": {
-        "enabled": true,
-        "max_injections": 1,
-        "always_apply": false
-      }
-    },
     "ajia-core/ajia-learn": {
       "capabilities": [
         "skill.learn"
@@ -737,61 +698,6 @@
         "always_apply": false
       }
     },
-    "ajia-core/karpathy-guidelines": {
-      "capabilities": [
-        "code.guidelines"
-      ],
-      "triggers": {
-        "phrases": [
-          "karpathy guidelines",
-          "avoid overengineering",
-          "surgical change"
-        ],
-        "keywords": [
-          "karpathy",
-          "overengineering",
-          "simplicity",
-          "surgical",
-          "assumptions"
-        ],
-        "regex": []
-      },
-      "examples": {
-        "positive": [
-          "apply the karpathy guidelines to this refactor",
-          "keep this change minimal and surgical"
-        ],
-        "negative": [
-          "write a biography of andrej karpathy"
-        ]
-      },
-      "negative_triggers": [
-        {
-          "pattern": "biography|who is andrej",
-          "severity": "veto",
-          "unless": "code|guideline|refactor"
-        }
-      ],
-      "file_globs": [
-        "**/*.py",
-        "**/*.ts",
-        "**/*.tsx",
-        "**/*.go",
-        "**/*.rs"
-      ],
-      "host_fit": [
-        "*"
-      ],
-      "requires": {
-        "tools": []
-      },
-      "priority": 55,
-      "routing": {
-        "enabled": true,
-        "max_injections": 1,
-        "always_apply": false
-      }
-    },
     "ajia-core/ponytail": {
       "capabilities": [
         "code.simplicity"
@@ -921,8 +827,7 @@
           "html",
           "explainer",
           "visual",
-          "page",
-          "diagram"
+          "page"
         ],
         "regex": []
       },
@@ -941,6 +846,10 @@
           "pattern": "production website|marketing site|landing page",
           "severity": "veto",
           "unless": "explain|answer|explainer|visual"
+        },
+        {
+          "pattern": "diagram|flowchart|sequence diagram|erd|architecture|schema",
+          "severity": "veto"
         }
       ],
       "file_globs": [],

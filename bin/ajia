@@ -3278,7 +3278,7 @@ def cmd_promote(home: Path, args: argparse.Namespace) -> int:
             "license is unknown; review it and rerun with --allow-unknown-license"
         )
 
-    default_name = record["name"] if str(record["name"]).startswith("ajia-") else f"ajia-{record['name']}"
+    default_name = f"ajia-{install_slug(record['name'])}"
     name = args.name or default_name
     if not NAME_RE.fullmatch(name):
         raise SkillError(f"invalid promotion name: {name}")
@@ -4429,6 +4429,16 @@ def review_slug(value: Any) -> str:
     return slug
 
 
+def install_slug(value: Any) -> str:
+    """Bare slug for install paths: the directory prefix is added exactly once."""
+    slug = review_slug(value)
+    return slug[len("ajia-"):] if slug.startswith("ajia-") else slug
+
+
+def install_path(root: Path, value: Any) -> Path:
+    return root / f"ajia-{install_slug(value)}"
+
+
 def normalize_transcript_message(message: Any) -> str:
     if not isinstance(message, dict):
         return str(message).strip()
@@ -4859,7 +4869,7 @@ def learning_backup(home: Path, config: dict[str, Any], slug: str) -> tuple[Path
     root = paths(home)["backups"] / f"learning-{stamp}-{slug}"
     root.mkdir(parents=True, exist_ok=True)
     foundry_dir = paths(home)["foundry"] / slug
-    installed_dir = learning_install_root(home, config) / f"ajia-{slug}"
+    installed_dir = install_path(learning_install_root(home, config), slug)
     before_foundry = None
     before_installed = None
     if foundry_dir.is_dir():
@@ -4878,7 +4888,7 @@ def restore_learning_backup(
     backup_root: Path,
 ) -> None:
     foundry_dir = paths(home)["foundry"] / slug
-    installed_dir = learning_install_root(home, config) / f"ajia-{slug}"
+    installed_dir = install_path(learning_install_root(home, config), slug)
     for target, name in ((foundry_dir, "foundry"), (installed_dir, "installed")):
         backup = backup_root / name
         if target.exists():
@@ -4939,7 +4949,7 @@ def install_learning_skill(
 ) -> Path:
     foundry_dir = paths(home)["foundry"] / slug
     root = learning_install_root(home, config)
-    dest = root / f"ajia-{slug}"
+    dest = install_path(root, slug)
     if dest.exists() and not installed_marker_owned(dest, slug):
         raise SkillError(f"install target is not learn-owned: {dest}")
     root.mkdir(parents=True, exist_ok=True)
@@ -5547,7 +5557,7 @@ def learning_archive(home: Path, config: dict[str, Any], slug: str, reason: str 
     sidecar["state"] = "archived"
     write_json(foundry_dir / ".ajia-learn.json", sidecar)
     shutil.move(str(foundry_dir), str(archive_dir))
-    installed_dir = learning_install_root(home, config) / f"ajia-{slug}"
+    installed_dir = install_path(learning_install_root(home, config), slug)
     if installed_dir.exists() and installed_marker_owned(installed_dir, slug):
         shutil.rmtree(installed_dir)
     build_catalog(home, quiet=True)

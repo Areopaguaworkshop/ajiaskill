@@ -4,6 +4,10 @@ A local skill platform for coding agents. State the feature or task; the host de
 
 Status: **Phase 4: automatic learning and host integrations.** Catalog, search/use, MCP, safety, promotion, rollback, native inventory, remote source add, cross-agent foundry, profiles, automatic learning, and host integrations exist. Automatic skill detection, native-first routing, body and optional dense retrieval, an optional 0-2 gate, review-to-learn authoring, and one personal profile across six hosts exist. MCP is the default trigger; host plugins and hooks are opt-in through the setup commands.
 
+![ajiaskill architecture: agent hosts call the MCP server and CLI, which read the catalog, native inventory, and safety gate before promotion into host skill roots](docs/diagrams/ajiaskill-architecture.png)
+
+The [interactive architecture diagram](docs/diagrams/ajiaskill-architecture.html) pans, zooms, and switches themes.
+
 ## What it does
 
 - **Automatic skill detection:** the user states the task or feature, not a skill name. The host reads it; native descriptions, the MCP trigger policy, and `ajia_search` / `ajia_use` select the skill. `ajia route --gate` adds an optional 0-2 model gate; a hook can make the choice deterministic.
@@ -28,6 +32,8 @@ Status: **Phase 4: automatic learning and host integrations.** Catalog, search/u
 
 You describe the feature or task. You do not name a skill, and you do not wire a command per feature. The host reads the message and detects the skill while you use its features normally.
 
+![Skill detection workflow: the host checks native skills first, falls back to ajia_search and ajia_use, follows the skill body, then scans and promotes only with approval](docs/diagrams/ajiaskill-workflow.png)
+
 1. **Native first:** `install.sh` puts core skills in host roots. The host loads their descriptions and may use one directly.
 2. **Policy:** the MCP server sends an intent map in its `initialize` response.
 3. **Search fallback:** when no native skill clearly fits, the host calls `ajia_search`, then `ajia_use`.
@@ -44,7 +50,11 @@ MCP is the tool surface, not the chooser: it never reads the user message, and t
 4. **`ajia_use`:** the server copies the exact bytes to a content-addressed read-only store, records a 30-day trial, and returns the full `SKILL.md` plus `base_dir`.
 5. **Follow in place:** the model follows the returned body. Nothing is installed or promoted; `ajia promote` remains a separate, explicitly approved step.
 
-If no candidate is safe, the correct result is `none`. See the [OpenCode skill discovery workflow](docs/diagrams/opencode-skill-discovery.html) for the full standalone diagram.
+If no candidate is safe, the correct result is `none`.
+
+![OpenCode skill discovery: OpenCode checks installed skills, the model calls ajia_search, chooses an id, calls ajia_use, and follows the returned body in place](docs/diagrams/opencode-skill-discovery.png)
+
+The [interactive OpenCode skill discovery workflow](docs/diagrams/opencode-skill-discovery.html) shows the same path as a standalone diagram.
 
 ## Unified personal settings
 
@@ -408,6 +418,10 @@ Review and authoring share one ledger and one sidecar. New skills record `origin
 
 M0 ships the engine, usage ledger, scan, quarantine, backup, ledger, rollback, and immutable core/user guards. M1 adds the OpenCode V2 plugin: install it with `ajia setup opencode-plugin --install` and restart OpenCode. M2 adds Claude Code and Codex hooks: `ajia setup claude-hooks --install` or `ajia setup codex-hooks --install`. M3 adds Pi/OMP extensions (`ajia setup pi-plugin --install`, `ajia setup omp-plugin --install`), repeated-task suggestions, near-duplicate refusal, and archive/restore/prune curator commands. M4 adds the review-to-learn split, evidence-backed lessons, the quality rubric, whole-catalog dedup, patch caps, transcript redaction, daily budgets, and an offline injection/safety eval. The hooks review on `Stop`/`agent_end`, use the host model for both the lesson and the authoring call, and inject `~/.ajia/memory`. Codex asks you to trust the new hooks in `/hooks`.
 
+![Learning workflow: review queues a lesson, ajia-learn authors a foundry candidate, sync indexes it, ajia use reads it in place, and scan plus promote install it only with approval](docs/diagrams/ajia-learn-workflow.png)
+
+The [interactive learning workflow](docs/diagrams/ajia-learn-workflow.html) traces the same path from user input to a reusable skill.
+
 ## Native-first
 
 `hosts.json` holds the user and project skill roots for all six hosts. `ajia native` scans them, marks ajia-owned symlinks and promoted copies, and reports what is truly native. `ajia search --host` and `ajia route --host` use that inventory. A native skill wins, and the source fallback is refused.
@@ -419,7 +433,6 @@ Workflow and output style:
 - `grill-me` — turn a vague idea into shared understanding.
 - `caveman` — terse caveman voice; every technical fact, no ceremony.
 - `ponytail` — lazy senior dev mode; the smallest complete change.
-- `karpathy-guidelines` — surgical changes, explicit assumptions, verifiable success.
 - `i-have-adhd` — lead with the next action and keep progress visible.
 
 Platform:
@@ -428,7 +441,6 @@ Platform:
 - `ajia-router` — fallback router for manual use.
 - `ajia-scan` — the safety stack and report reading, including PII and lint.
 - `ajia-promote` — the gated promotion flow.
-- `ajia-sandbox` — no-network script execution.
 - `ajia-learn` — Hermes `/learn` foundry.
 - `create-verification-skill` — generate a project-local skill that drives the real app and captures evidence.
 
@@ -453,6 +465,7 @@ profiles.json            # sources, hosts, routing, safety
 routing.json             # routing metadata for core and common skills
 adapters/                # OpenCode plugin and Pi/OMP extensions
 skills/                  # core skills
+docs/diagrams/           # archify workflow, architecture, and sequence diagrams
 docs/plans/              # autolearn plan (Markdown + HTML)
 scripts/validate-skills.py
 scripts/eval-routing.py
@@ -466,7 +479,7 @@ install.sh
 ## Validate
 
 ```bash
-python3 -m unittest discover -s tests -v
+python3 -m unittest tests.test_ajia -v
 python3 scripts/validate-skills.py
 python3 scripts/eval-routing.py --verbose
 python3 scripts/eval-routing.py --cases evals/routing-heldout.jsonl --body --verbose

@@ -20,14 +20,6 @@ files next to its `SKILL.md`.
 - License: Apache-2.0; pre-3.0 parts under MIT (`LICENSE-MIT`)
 - Copyright: 2026 Julius Brussee
 
-## multica-ai — `andrej-karpathy-skills`
-
-- Source: https://github.com/multica-ai/andrej-karpathy-skills
-- Files: `skills/karpathy-guidelines/SKILL.md`
-- Used by: `skills/karpathy-guidelines/`
-- License: MIT, declared in `.claude-plugin/plugin.json`; the upstream tree has no LICENSE file
-- Copyright: multica-ai contributors
-
 ## Dietrich Gebert — `DietrichGebert/ponytail`
 
 - Source: https://github.com/DietrichGebert/ponytail

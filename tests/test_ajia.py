@@ -917,6 +917,44 @@ class AjiaTest(unittest.TestCase):
         self.assertIn("in this repository", restored)
         self.assertNotIn("uv.lock", restored)
 
+    def test_learn_installs_prefixed_slug_once(self) -> None:
+        self.run_cli("catalog", "build")
+        transcript = Path(self.tmp.name) / "transcript.txt"
+        transcript.write_text(
+            "user: name learned skills with the ajia prefix\nassistant: noted\n",
+            encoding="utf-8",
+        )
+        env = self.learning_env()
+        lesson_id = self.queue_lesson(
+            self.lesson_plan(name="ajia-prefixed-skill"), transcript, env
+        )
+        create = self.write_learning_plan(
+            "create",
+            {
+                "action": "create",
+                "name": "ajia-prefixed-skill",
+                "description": "Name a learned skill with one ajia prefix.",
+                "body": "# Prefixed\n\nCompose the install path once.\n\n## Verify\n\nList the install root.\n",
+                "license": "MIT",
+                "confidence": 0.9,
+                "reason": "user asked for the prefix",
+            },
+        )
+        result = self.run_cli(
+            "learn",
+            "--from-lesson",
+            lesson_id,
+            "--plan",
+            str(create),
+            "--builtin",
+            "--json",
+            env_overrides=env,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        root = Path(env["AJIA_LEARNING_INSTALL_ROOT"])
+        self.assertTrue((root / "ajia-prefixed-skill" / ".ajia-promoted.json").exists())
+        self.assertFalse((root / "ajia-ajia-prefixed-skill").exists())
+
     def test_review_quarantines_unsafe_skill(self) -> None:
         transcript = Path(self.tmp.name) / "transcript.txt"
         transcript.write_text("user: save this\n", encoding="utf-8")
